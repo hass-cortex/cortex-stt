@@ -1,0 +1,89 @@
+[project]
+name = "cortex-stt"
+version = "0.1.0"
+description = "Home Assistant integration for Cortex STT multi-engine speech-to-text"
+readme = "README.md"
+requires-python = ">=3.14"
+license = {text = "MIT"}
+authors = [{name = "parkghost", email = "parkghost@gmail.com"}]
+keywords = ["home-assistant", "speech-to-text", "stt", "voice", "cortex", "whisper", "parakeet"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Home Automation",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = []
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["custom_components*"]
+
+[dependency-groups]
+dev = ["ruff>=0.14", "pyright>=1.1.390", "commitizen>=4.0", "pre-commit>=4.0"]
+test = ["pytest>=8.0", "pytest-asyncio>=0.24", "pytest-cov>=6.0", "aiohttp>=3.8", "aioresponses>=0.7"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+markers = ["integration: Integration tests requiring external resources"]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "ASYNC", "B", "SIM", "RUF013"]
+ignore = ["E501", "B008", "SIM108"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["custom_components.cortex_stt"]
+
+[tool.pyright]
+pythonVersion = "3.14"
+venvPath = "."
+venv = ".venv"
+include = ["custom_components"]
+exclude = ["tests", "**/__pycache__"]
+typeCheckingMode = "standard"
+useLibraryCodeForTypes = true
+# homeassistant is not installed in this repo (mocked in tests); suppress missing-import noise
+reportMissingImports = "none"
+reportMissingTypeStubs = "none"
+
+[tool.coverage.run]
+source = ["custom_components/cortex_stt"]
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.",
+]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.1.0"
+version_files = [
+    "pyproject.toml:version",
+    "custom_components/cortex_stt/manifest.json:version",
+]
+tag_format = "$version"
+annotated_tag = true
+update_changelog_on_bump = false
+pre_bump_hooks = ["uv lock", "git add uv.lock"]
+major_version_zero = true

@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "[0-9]*"
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Pre-release Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --group dev --group test
+      - run: uv run ruff check .
+      - run: uv run pytest -v
+
+  release:
+    name: Create GitHub Release
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v8.0.0
+        with:
+          enable-cache: true
+
+      - run: uv sync --group dev
+
+      - name: Extract tag version
+        id: meta
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/}"
+          echo "version=$TAG_VERSION" >> $GITHUB_OUTPUT
+
+          # Detect prerelease (PEP 440: a, b, rc suffixes)
+          if echo "$TAG_VERSION" | grep -qE '[0-9]+\.[0-9]+\.[0-9]+(a|b|rc)[0-9]+'; then
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Verify version consistency
+        run: |
+          TAG_VERSION="${{ steps.meta.outputs.version }}"
+          PYPROJECT_VERSION=$(python3 -c "
+          import tomllib
+          with open('pyproject.toml', 'rb') as f:
+              print(tomllib.load(f)['project']['version'])
+          ")
+          MANIFEST_VERSION=$(python3 -c "
+          import json
+          with open('custom_components/cortex_stt/manifest.json') as f:
+              print(json.load(f)['version'])
+          ")
+          echo "Tag: $TAG_VERSION"
+          echo "pyproject.toml: $PYPROJECT_VERSION"
+          echo "manifest.json: $MANIFEST_VERSION"
+          if [ "$TAG_VERSION" != "$PYPROJECT_VERSION" ] || [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "::error::Version mismatch! Tag=$TAG_VERSION pyproject=$PYPROJECT_VERSION manifest=$MANIFEST_VERSION"
+            exit 1
+          fi
+
+      - name: Generate release notes
+        run: |
+          TAG_VERSION="${{ steps.meta.outputs.version }}"
+          PREV_TAG=$(git tag --sort=-v:refname | grep -v "^${TAG_VERSION}$" | head -1)
+          if [ -n "$PREV_TAG" ]; then
+            uv run cz changelog --dry-run --start-rev "$PREV_TAG" > body.md
+          else
+            uv run cz changelog --dry-run > body.md
+          fi
+          echo "--- Release Notes ---"
+          cat body.md
+
+      - name: Create release archive
+        run: |
+          cd custom_components/cortex_stt
+          zip -r ../../cortex_stt.zip .
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          GH_ARGS=()
+          if [ "${{ steps.meta.outputs.prerelease }}" = "true" ]; then
+            GH_ARGS+=(--prerelease)
+          fi
+          gh release create "${{ steps.meta.outputs.version }}" \
+            "${GH_ARGS[@]}" \
+            --notes-file body.md \
+            cortex_stt.zip

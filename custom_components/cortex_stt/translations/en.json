@@ -1,0 +1,83 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Cortex STT Server",
+        "description": "Enter the URL and API key for your Cortex STT instance.",
+        "data": {
+          "host": "Server URL",
+          "api_key": "API Key"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate Cortex STT",
+        "description": "The API key is invalid. Please enter a new API key.",
+        "data": {
+          "api_key": "API Key"
+        }
+      },
+      "hassio_confirm": {
+        "title": "Cortex STT discovered",
+        "description": "Do you want to connect Home Assistant to the Cortex STT app: {addon}?"
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to server",
+      "invalid_api_key": "Invalid API key"
+    },
+    "abort": {
+      "already_configured": "This server is already configured",
+      "reauth_successful": "API key updated successfully"
+    }
+  },
+  "exceptions": {
+    "invalid_api_key": {
+      "message": "Invalid API key for Cortex STT"
+    },
+    "cannot_connect": {
+      "message": "Cannot connect to Cortex STT: {error}"
+    },
+    "list_models_failed": {
+      "message": "Failed to list models from Cortex STT: {error}"
+    },
+    "engine_status_failed": {
+      "message": "Error fetching engine status: {error}"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Cortex STT options",
+        "description": "Adjust the engine status polling interval (seconds).",
+        "data": {
+          "update_interval": "Polling interval (seconds)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "total_requests": { "name": "Total requests" },
+      "successful_requests": { "name": "Successful requests" },
+      "failed_requests": { "name": "Failed requests" },
+      "last_duration": { "name": "Last inference duration" },
+      "average_duration": { "name": "Average inference duration" },
+      "last_audio_size": { "name": "Last audio size" },
+      "total_audio_duration": { "name": "Total audio duration" },
+      "last_audio_duration": { "name": "Last audio duration" },
+      "last_raw_text": { "name": "Transcribed text" },
+      "last_result": {
+        "name": "Last result",
+        "state": {
+          "success": "Success",
+          "no_speech": "No speech",
+          "api_error": "API error"
+        }
+      },
+      "rtf": { "name": "Real-time factor" }
+    },
+    "binary_sensor": {
+      "model_loaded": { "name": "Model loaded" }
+    }
+  }
+}
