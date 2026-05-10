@@ -1,0 +1,24 @@
+{
+  "entity": {
+    "sensor": {
+      "total_requests": { "default": "mdi:counter" },
+      "successful_requests": { "default": "mdi:check-circle" },
+      "failed_requests": { "default": "mdi:alert-circle" },
+      "last_duration": { "default": "mdi:timer-outline" },
+      "average_duration": { "default": "mdi:timer-sand" },
+      "last_audio_size": { "default": "mdi:file-music" },
+      "total_audio_duration": { "default": "mdi:clock-outline" },
+      "last_audio_duration": { "default": "mdi:clock-fast" },
+      "last_raw_text": { "default": "mdi:text" },
+      "last_result": {
+        "default": "mdi:check-decagram",
+        "state": {
+          "success": "mdi:check-circle",
+          "no_speech": "mdi:comment-off",
+          "api_error": "mdi:alert"
+        }
+      },
+      "rtf": { "default": "mdi:speedometer" }
+    }
+  }
+}

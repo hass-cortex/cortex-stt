@@ -1,0 +1,14 @@
+{
+  "domain": "cortex_stt",
+  "name": "Cortex STT",
+  "codeowners": ["@parkghost"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/hass-cortex/cortex-stt",
+  "integration_type": "service",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/hass-cortex/cortex-stt/issues",
+  "quality_scale": "platinum",
+  "requirements": [],
+  "version": "0.1.0"
+}
