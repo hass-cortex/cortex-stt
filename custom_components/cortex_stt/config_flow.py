@@ -14,6 +14,7 @@ from homeassistant.config_entries import (
     ConfigFlow,
     ConfigFlowResult,
     OptionsFlow,
+    OptionsFlowWithReload,
 )
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -211,7 +212,7 @@ class CortexSTTConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         )
 
 
-class CortexSTTOptionsFlow(OptionsFlow):
+class CortexSTTOptionsFlow(OptionsFlowWithReload):
     """Options flow for Cortex STT."""
 
     async def async_step_init(

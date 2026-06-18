@@ -117,6 +117,7 @@ class _MockOptionsFlow:
 _ha_config_entries.ConfigFlow = _MockConfigFlow
 _ha_config_entries.ConfigFlowResult = dict
 _ha_config_entries.OptionsFlow = _MockOptionsFlow
+_ha_config_entries.OptionsFlowWithReload = _MockOptionsFlow
 
 # ── Device registry ──
 _ha_helpers_dr.async_get = MagicMock()
