@@ -1,6 +1,6 @@
 [project]
 name = "cortex-stt"
-version = "0.1.0"
+version = "0.2.0"
 description = "Home Assistant integration for Cortex STT multi-engine speech-to-text"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -77,7 +77,7 @@ exclude_lines = [
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.1.0"
+version = "0.2.0"
 version_files = [
     "pyproject.toml:version",
     "custom_components/cortex_stt/manifest.json:version",
