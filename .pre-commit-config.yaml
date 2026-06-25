@@ -26,6 +26,12 @@ repos:
         language: system
         pass_filenames: false
         files: ^custom_components/
+      - id: uv-lock-check
+        name: uv lock (check)
+        entry: uv lock --check
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
       - id: pyright
         name: pyright (type check)
         entry: uv run pyright
