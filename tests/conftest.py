@@ -57,6 +57,7 @@ _ha_exceptions.ConfigEntryNotReady = type(
 # ── Core ──
 _ha_core.HomeAssistant = MagicMock
 _ha_core.callback = lambda f: f
+_ha_core.Event = type("Event", (), {})
 
 # ── ConfigEntry / ConfigEntryNotReady ──
 _ha_config_entries.ConfigEntry = MagicMock
@@ -336,6 +337,33 @@ _ha_helpers_uc.DataUpdateCoordinator = _MockDataUpdateCoordinator
 _ha_helpers_uc.CoordinatorEntity = _MockCoordinatorEntity
 _ha_helpers_uc.UpdateFailed = _MockUpdateFailedError
 
+# ── Entity base (used by entity_setup typing) ──
+_ha_helpers_entity = ModuleType("homeassistant.helpers.entity")
+_ha_helpers_entity.Entity = object
+
+# ── Dispatcher (functional: lets tests exercise the event→add flow) ──
+_ha_helpers_dispatcher = ModuleType("homeassistant.helpers.dispatcher")
+_dispatcher_listeners: dict[tuple[int, str], list] = {}
+
+
+def _async_dispatcher_connect(hass, signal, target):
+    key = (id(hass), signal)
+    _dispatcher_listeners.setdefault(key, []).append(target)
+
+    def _unsub():
+        _dispatcher_listeners[key].remove(target)
+
+    return _unsub
+
+
+def _async_dispatcher_send(hass, signal, *args):
+    for target in list(_dispatcher_listeners.get((id(hass), signal), [])):
+        target(*args)
+
+
+_ha_helpers_dispatcher.async_dispatcher_connect = _async_dispatcher_connect
+_ha_helpers_dispatcher.async_dispatcher_send = _async_dispatcher_send
+
 # ── Register all mocked modules ──
 for mod_name, mod in [
     ("homeassistant", _ha),
@@ -350,6 +378,8 @@ for mod_name, mod in [
     ("homeassistant.helpers.service_info.hassio", _ha_helpers_si_hassio),
     ("homeassistant.helpers.typing", _ha_helpers_typing),
     ("homeassistant.helpers.update_coordinator", _ha_helpers_uc),
+    ("homeassistant.helpers.entity", _ha_helpers_entity),
+    ("homeassistant.helpers.dispatcher", _ha_helpers_dispatcher),
     ("homeassistant.exceptions", _ha_exceptions),
     ("homeassistant.const", _ha_const),
     ("homeassistant.components", _ha_components),

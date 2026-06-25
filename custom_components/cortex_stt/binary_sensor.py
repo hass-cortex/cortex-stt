@@ -16,6 +16,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL, DOMAIN
 from .coordinator import CortexSTTCoordinator
+from .entity_setup import async_setup_dynamic_models
 
 if TYPE_CHECKING:
     from . import CortexSTTConfigEntry
@@ -29,8 +30,7 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up model-loaded binary sensors -- one per downloaded model."""
-    runtime_data = config_entry.runtime_data
-    client = runtime_data.client
+    client = config_entry.runtime_data.client
 
     update_interval = config_entry.options.get(
         CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
@@ -38,11 +38,14 @@ async def async_setup_entry(
     coordinator = CortexSTTCoordinator(hass, client, update_interval=update_interval)
     await coordinator.async_config_entry_first_refresh()
 
-    entities = [
-        ModelLoadedSensor(config_entry, coordinator, model.id, model.name)
-        for model in runtime_data.models
-    ]
-    async_add_entities(entities)
+    async_setup_dynamic_models(
+        hass,
+        config_entry,
+        async_add_entities,
+        lambda model: [
+            ModelLoadedSensor(config_entry, coordinator, model.id, model.name)
+        ],
+    )
 
 
 class ModelLoadedSensor(CoordinatorEntity[CortexSTTCoordinator], BinarySensorEntity):

@@ -25,6 +25,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .client import CortexSTTClient
 from .const import DOMAIN
+from .entity_setup import async_setup_dynamic_models
 from .models import CortexSTTRuntimeData, ModelInfo, TranscriptionStats
 
 if TYPE_CHECKING:
@@ -79,13 +80,14 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Cortex STT entities -- one per downloaded model."""
-    runtime_data = config_entry.runtime_data
-    client: CortexSTTClient = runtime_data.client
+    client: CortexSTTClient = config_entry.runtime_data.client
 
-    entities = [
-        CortexSTTEntity(config_entry, client, model) for model in runtime_data.models
-    ]
-    async_add_entities(entities)
+    async_setup_dynamic_models(
+        hass,
+        config_entry,
+        async_add_entities,
+        lambda model: [CortexSTTEntity(config_entry, client, model)],
+    )
 
 
 class CortexSTTEntity(SpeechToTextEntity):

@@ -19,6 +19,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import DOMAIN
+from .entity_setup import async_setup_dynamic_models
 from .models import CortexSTTRuntimeData, TranscriptionStats
 
 if TYPE_CHECKING:
@@ -143,12 +144,15 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Cortex STT sensors -- 11 per downloaded model."""
-    runtime_data: CortexSTTRuntimeData = config_entry.runtime_data
-    entities = []
-    for model in runtime_data.models:
-        for desc in SENSOR_DESCRIPTIONS:
-            entities.append(CortexSTTSensor(config_entry, model.id, model.name, desc))
-    async_add_entities(entities)
+    async_setup_dynamic_models(
+        hass,
+        config_entry,
+        async_add_entities,
+        lambda model: [
+            CortexSTTSensor(config_entry, model.id, model.name, desc)
+            for desc in SENSOR_DESCRIPTIONS
+        ],
+    )
 
 
 class CortexSTTSensor(RestoreSensor):
