@@ -30,10 +30,9 @@ def _make_model(model_id: str, status: str = "downloaded") -> ModelInfo:
         id=model_id,
         name=model_id,
         description="test model",
-        engine_type="whisper",
         status=status,
         size_mb=100,
-        supported_languages=["en"],
+        languages=["en"],
     )
 
 
@@ -102,17 +101,17 @@ async def test_event_handler_adds_and_signals(mock_hass, mock_config_entry):
     mock_client.list_models = AsyncMock(
         return_value=[
             _make_model("whisper-tiny"),
-            _make_model("parakeet-0.6b"),
+            _make_model("parakeet-tdt-0.6b-v3"),
             _make_model("sensevoice", status="available"),
         ]
     )
     await handler(MagicMock())
 
     assert received, "dispatcher signal was not sent"
-    assert {m.id for m in received[-1]} == {"whisper-tiny", "parakeet-0.6b"}
+    assert {m.id for m in received[-1]} == {"whisper-tiny", "parakeet-tdt-0.6b-v3"}
     assert {m.id for m in mock_config_entry.runtime_data.models} == {
         "whisper-tiny",
-        "parakeet-0.6b",
+        "parakeet-tdt-0.6b-v3",
     }
 
 
@@ -122,12 +121,12 @@ async def test_event_handler_removes_stale_device(mock_hass, mock_config_entry):
     mock_client = MagicMock()
     mock_client.validate = AsyncMock(return_value=None)
     mock_client.list_models = AsyncMock(
-        return_value=[_make_model("whisper-tiny"), _make_model("parakeet-0.6b")]
+        return_value=[_make_model("whisper-tiny"), _make_model("parakeet-tdt-0.6b-v3")]
     )
 
     stale = MagicMock()
     stale.id = "device_parakeet"
-    stale.identifiers = {("cortex_stt", "test_entry_123_parakeet-0.6b")}
+    stale.identifiers = {("cortex_stt", "test_entry_123_parakeet-tdt-0.6b-v3")}
     kept = MagicMock()
     kept.id = "device_tiny"
     kept.identifiers = {("cortex_stt", "test_entry_123_whisper-tiny")}
@@ -187,9 +186,11 @@ async def test_stt_platform_adds_new_model_live(mock_hass, mock_config_entry):
 
     # A new model appears: only it is added (tiny is already known).
     async_dispatcher_send(
-        mock_hass, signal, [_make_model("whisper-tiny"), _make_model("parakeet-0.6b")]
+        mock_hass,
+        signal,
+        [_make_model("whisper-tiny"), _make_model("parakeet-tdt-0.6b-v3")],
     )
-    assert {e._model.id for e in added} == {"whisper-tiny", "parakeet-0.6b"}
+    assert {e._model.id for e in added} == {"whisper-tiny", "parakeet-tdt-0.6b-v3"}
 
     # parakeet is deleted: nothing added, but it leaves the known-set.
     async_dispatcher_send(mock_hass, signal, [_make_model("whisper-tiny")])
@@ -197,7 +198,9 @@ async def test_stt_platform_adds_new_model_live(mock_hass, mock_config_entry):
 
     # parakeet re-downloaded: it is added again.
     async_dispatcher_send(
-        mock_hass, signal, [_make_model("whisper-tiny"), _make_model("parakeet-0.6b")]
+        mock_hass,
+        signal,
+        [_make_model("whisper-tiny"), _make_model("parakeet-tdt-0.6b-v3")],
     )
     assert len(added) == 3
-    assert [e._model.id for e in added].count("parakeet-0.6b") == 2
+    assert [e._model.id for e in added].count("parakeet-tdt-0.6b-v3") == 2

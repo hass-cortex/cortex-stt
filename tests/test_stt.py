@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import aiohttp
 import pytest
 
+from custom_components.cortex_stt.client import CortexSTTStreamConnectError
 from custom_components.cortex_stt.models import (
     CortexSTTRuntimeData,
     ModelInfo,
@@ -24,10 +25,9 @@ def _make_model(**overrides) -> ModelInfo:
         "id": "whisper-small",
         "name": "Whisper Small",
         "description": "",
-        "engine_type": "whisper",
         "status": "downloaded",
         "size_mb": 500,
-        "supported_languages": ["en", "zh"],
+        "languages": ["en", "zh"],
     }
     defaults.update(overrides)
     return ModelInfo(**defaults)
@@ -59,6 +59,36 @@ async def _make_stream(chunks: list[bytes]):
     """Create an async iterable of audio chunks."""
     for chunk in chunks:
         yield chunk
+
+
+def _stream_returns(result: TranscribeResult):
+    """transcribe_stream side_effect: drain the stream, then return a result.
+
+    Draining mirrors the real client so stt.py's byte counter is populated.
+    """
+
+    async def _run(audio_stream, model_id, language):
+        async for _ in audio_stream:
+            pass
+        return result
+
+    return _run
+
+
+def _stream_raises(exc: Exception, *, consume: bool = True):
+    """transcribe_stream side_effect: optionally drain the stream, then raise.
+
+    A mid-stream failure consumes audio first (connected); a connect failure
+    raises before any chunk is read.
+    """
+
+    async def _run(audio_stream, model_id, language):
+        if consume:
+            async for _ in audio_stream:
+                pass
+        raise exc
+
+    return _run
 
 
 def _make_metadata(language: str = "en") -> MagicMock:
@@ -115,7 +145,7 @@ class TestCortexSTTEntityProperties:
 
     def test_supported_languages(self):
         """supported_languages uses _expand_languages on model languages."""
-        model = _make_model(supported_languages=["en", "zh"])
+        model = _make_model(languages=["en", "zh"])
         entity, _, _ = _make_entity(model=model)
 
         langs = entity.supported_languages
@@ -177,12 +207,14 @@ class TestAsyncProcessAudioStream:
         entity, mock_client, _ = _make_entity()
         metadata = _make_metadata(language="en")
 
-        mock_client.transcribe.return_value = TranscribeResult(
-            text="hello world",
-            model="whisper-small",
-            duration_ms=100,
-            inference_ms=80,
-            segments=[],
+        mock_client.transcribe_stream.side_effect = _stream_returns(
+            TranscribeResult(
+                text="hello world",
+                model="whisper-small",
+                duration_ms=100,
+                inference_ms=80,
+                segments=[],
+            )
         )
 
         result = await entity.async_process_audio_stream(
@@ -191,15 +223,17 @@ class TestAsyncProcessAudioStream:
 
         assert result.result == "success"
         assert result.text == "hello world"
-        mock_client.transcribe.assert_awaited_once()
+        mock_client.transcribe_stream.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_transcription_api_error(self):
-        """API exception returns ERROR and pushes stats with api_error=True."""
+        """A mid-stream error returns ERROR and pushes stats with api_error=True."""
         entity, mock_client, _ = _make_entity()
         metadata = _make_metadata()
 
-        mock_client.transcribe.side_effect = aiohttp.ClientError("connection refused")
+        mock_client.transcribe_stream.side_effect = _stream_raises(
+            aiohttp.ClientError("connection reset")
+        )
 
         pushed_stats: list[TranscriptionStats] = []
         entity._push_stats = lambda s: pushed_stats.append(s)
@@ -220,12 +254,14 @@ class TestAsyncProcessAudioStream:
         entity, mock_client, _ = _make_entity()
         metadata = _make_metadata()
 
-        mock_client.transcribe.return_value = TranscribeResult(
-            text="",
-            model="whisper-small",
-            duration_ms=50,
-            inference_ms=40,
-            segments=[],
+        mock_client.transcribe_stream.side_effect = _stream_returns(
+            TranscribeResult(
+                text="",
+                model="whisper-small",
+                duration_ms=50,
+                inference_ms=40,
+                segments=[],
+            )
         )
 
         pushed_stats: list[TranscriptionStats] = []
@@ -240,6 +276,61 @@ class TestAsyncProcessAudioStream:
         assert len(pushed_stats) == 1
         assert pushed_stats[0].api_error is False
         assert pushed_stats[0].success is False
+
+    @pytest.mark.asyncio
+    async def test_ws_connect_failure_falls_back_to_post(self):
+        """When the WS connect fails, the entity buffers and POSTs once."""
+        entity, mock_client, _ = _make_entity()
+        metadata = _make_metadata(language="en")
+
+        # WS connect fails before any chunk is consumed -> fall back.
+        mock_client.transcribe_stream.side_effect = _stream_raises(
+            CortexSTTStreamConnectError("connection refused"), consume=False
+        )
+        mock_client.transcribe.return_value = TranscribeResult(
+            text="hello from post",
+            model="whisper-small",
+            duration_ms=120,
+            inference_ms=90,
+            segments=[],
+        )
+
+        pushed_stats: list[TranscriptionStats] = []
+        entity._push_stats = lambda s: pushed_stats.append(s)
+
+        result = await entity.async_process_audio_stream(
+            metadata, _make_stream([b"\x00" * 16000, b"\x01" * 16000])
+        )
+
+        assert result.result == "success"
+        assert result.text == "hello from post"
+        # The POST fallback received the full buffered audio.
+        mock_client.transcribe.assert_awaited_once()
+        posted_audio = mock_client.transcribe.await_args.args[0]
+        assert len(posted_audio) == 32000
+        assert pushed_stats[0].success is True
+
+    @pytest.mark.asyncio
+    async def test_ws_connect_failure_then_post_error(self):
+        """Fallback POST error returns ERROR with api_error stats."""
+        entity, mock_client, _ = _make_entity()
+        metadata = _make_metadata()
+
+        mock_client.transcribe_stream.side_effect = _stream_raises(
+            CortexSTTStreamConnectError("connection refused"), consume=False
+        )
+        mock_client.transcribe.side_effect = aiohttp.ClientError("post failed")
+
+        pushed_stats: list[TranscriptionStats] = []
+        entity._push_stats = lambda s: pushed_stats.append(s)
+
+        result = await entity.async_process_audio_stream(
+            metadata, _make_stream([b"\x00" * 1000])
+        )
+
+        assert result.result == "error"
+        assert len(pushed_stats) == 1
+        assert pushed_stats[0].api_error is True
 
     @pytest.mark.asyncio
     async def test_push_stats_to_sensors(self):
@@ -275,24 +366,28 @@ class TestAsyncProcessAudioStream:
         entity._push_stats = lambda s: pushed_stats.append(s)
 
         # First transcription
-        mock_client.transcribe.return_value = TranscribeResult(
-            text="first",
-            model="whisper-small",
-            duration_ms=100,
-            inference_ms=80,
-            segments=[],
+        mock_client.transcribe_stream.side_effect = _stream_returns(
+            TranscribeResult(
+                text="first",
+                model="whisper-small",
+                duration_ms=100,
+                inference_ms=80,
+                segments=[],
+            )
         )
         await entity.async_process_audio_stream(
             metadata, _make_stream([b"\x00" * 32000])
         )
 
         # Second transcription
-        mock_client.transcribe.return_value = TranscribeResult(
-            text="second",
-            model="whisper-small",
-            duration_ms=200,
-            inference_ms=160,
-            segments=[],
+        mock_client.transcribe_stream.side_effect = _stream_returns(
+            TranscribeResult(
+                text="second",
+                model="whisper-small",
+                duration_ms=200,
+                inference_ms=160,
+                segments=[],
+            )
         )
         await entity.async_process_audio_stream(
             metadata, _make_stream([b"\x00" * 32000])

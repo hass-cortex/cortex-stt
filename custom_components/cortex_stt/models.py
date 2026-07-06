@@ -16,12 +16,11 @@ class ModelInfo:
     id: str
     name: str
     description: str
-    engine_type: str
     status: str
     size_mb: int
-    supported_languages: list[str]
+    languages: list[str]
     is_loaded: bool = False
-    is_recommended: bool = False
+    recommended: bool = False
 
 
 @dataclass

@@ -4,7 +4,7 @@
 [![HACS](https://img.shields.io/badge/HACS-Custom-blue.svg)](https://hacs.xyz/)
 [![HA Version](https://img.shields.io/badge/HA-2026.3.0+-green.svg)](https://www.home-assistant.io/)
 [![GitHub License](https://img.shields.io/github/license/hass-cortex/cortex-stt)](https://github.com/hass-cortex/cortex-stt/blob/main/LICENSE)
-[![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hass-cortex/cortex-stt)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hass-cortex/cortex-stt)
 
 A Home Assistant custom integration providing local, on-device speech-to-text via the [Cortex STT Server](https://github.com/hass-cortex/app-cortex-stt) -- a multi-engine server supporting Whisper, NVIDIA Parakeet, and SenseVoice models.
 

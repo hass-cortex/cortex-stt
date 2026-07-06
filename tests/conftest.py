@@ -432,10 +432,9 @@ def make_model(**overrides):
         "id": "whisper-small",
         "name": "Whisper Small",
         "description": "A small model",
-        "engine_type": "whisper",
         "status": "downloaded",
         "size_mb": 500,
-        "supported_languages": ["en", "zh"],
+        "languages": ["en", "zh"],
     }
     defaults.update(overrides)
     return ModelInfo(**defaults)
