@@ -4,16 +4,17 @@
 [![HACS](https://img.shields.io/badge/HACS-Custom-blue.svg)](https://hacs.xyz/)
 [![HA Version](https://img.shields.io/badge/HA-2026.3.0+-green.svg)](https://www.home-assistant.io/)
 [![GitHub License](https://img.shields.io/github/license/hass-cortex/cortex-stt)](https://github.com/hass-cortex/cortex-stt/blob/main/LICENSE)
-[![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hass-cortex/cortex-stt)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hass-cortex/cortex-stt)
 
-A Home Assistant custom integration providing local, on-device speech-to-text via the [Cortex STT Server](https://github.com/hass-cortex/app-cortex-stt) -- a multi-engine server supporting Whisper, NVIDIA Parakeet, and SenseVoice models.
+A Home Assistant custom integration providing local, on-device speech-to-text via the [Cortex STT Server](https://github.com/hass-cortex/app-cortex-stt) -- a multi-model server running Whisper, NVIDIA Parakeet, SenseVoice, Qwen3-ASR, and more on a single GGUF runtime.
 
 ```
 Audio ──► Cortex STT Server ──► Transcribed Text
               │
               ├── Whisper (multilingual)
               ├── Parakeet (English, low latency)
-              └── SenseVoice (Asian languages)
+              ├── SenseVoice (Asian languages)
+              └── Qwen3-ASR, Canary, Moonshine, ...
 ```
 
 Each downloaded model on the server becomes its own STT entity in Home Assistant, so voice pipelines can pick the right model per language or per use case.
@@ -22,9 +23,9 @@ Each downloaded model on the server becomes its own STT entity in Home Assistant
 
 ## Features
 
-- **Multi-engine STT** -- Whisper, Parakeet, and SenseVoice models served by the Cortex STT Server
+- **Multi-model STT** -- Whisper, Parakeet, SenseVoice, Qwen3-ASR, and more served by the Cortex STT Server
 - **Per-model entities** -- one STT entity, one `model loaded` binary sensor, and eleven diagnostic sensors per downloaded model
-- **Automatic model discovery** -- discovers everything on the server at setup and prunes devices for models you later remove server-side
+- **Automatic model discovery** -- discovers everything on the server at setup, then adds/removes entities live as models are downloaded or deleted server-side (no reload needed)
 - **Supervisor auto-discovery** -- when the Cortex STT app is installed, the integration is offered automatically with the URL and API key pre-filled (no manual setup needed)
 - **Runtime statistics** -- diagnostic sensors track request counts, inference duration, audio duration, and real-time factor
 
@@ -161,7 +162,6 @@ Development versions may contain breaking changes -- revert by running the same 
 
 ## Known Limitations
 
-- **Model list is captured at setup time** -- new models downloaded on the server after the integration is already configured do not appear until you reload the config entry (Settings > Devices & Services > three-dot menu > **Reload**).
 - **Audio format is fixed** -- the STT entity accepts 16 kHz / 16-bit / mono PCM WAV only. Voice pipelines already produce this format, but custom integrations sending audio directly must match.
 
 ## Contributing
@@ -170,7 +170,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, and contr
 
 ## Acknowledgements
 
-The Cortex STT Server app is built on top of [transcribe-rs](https://github.com/cjpais/transcribe-rs) -- a unified Rust library providing the multi-engine inference layer.
+The Cortex STT Server app is built on top of [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) -- the single GGUF/ggml runtime powering every model family.
 
 ## License
 

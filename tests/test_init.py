@@ -22,10 +22,9 @@ def _make_model(model_id: str, status: str = "downloaded") -> ModelInfo:
         id=model_id,
         name=model_id,
         description="test model",
-        engine_type="whisper",
         status=status,
         size_mb=100,
-        supported_languages=["en"],
+        languages=["en"],
     )
 
 
@@ -45,7 +44,7 @@ async def test_async_setup_returns_true(mock_hass):
 @pytest.mark.asyncio
 async def test_setup_entry_success(mock_hass, mock_config_entry):
     """Set up entry with valid client and models."""
-    models = [_make_model("whisper-tiny"), _make_model("parakeet-0.6b")]
+    models = [_make_model("whisper-tiny"), _make_model("parakeet-tdt-0.6b-v3")]
     mock_client = MagicMock()
     mock_client.validate = AsyncMock(return_value=None)
     mock_client.list_models = AsyncMock(return_value=models)

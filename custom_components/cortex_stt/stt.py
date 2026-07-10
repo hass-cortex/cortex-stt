@@ -23,7 +23,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .client import CortexSTTClient
+from .capture import resolve_capture_device
+from .client import (
+    CortexSTTClient,
+    CortexSTTStreamConnectError,
+)
 from .const import DOMAIN
 from .entity_setup import async_setup_dynamic_models
 from .models import CortexSTTRuntimeData, ModelInfo, TranscriptionStats
@@ -131,7 +135,7 @@ class CortexSTTEntity(SpeechToTextEntity):
         Expands base language codes (e.g. 'zh') to include common BCP-47
         locale variants (e.g. 'zh-TW', 'zh-CN') so HA pipeline matching works.
         """
-        return _expand_languages(self._model.supported_languages)
+        return _expand_languages(self._model.languages)
 
     @property
     def supported_formats(self) -> list[AudioFormats]:
@@ -164,10 +168,38 @@ class CortexSTTEntity(SpeechToTextEntity):
         for channel in runtime_data.sensors_by_model.get(self._model.id, ()):
             channel.handle_transcription(stats)
 
+    def _empty_result(self) -> SpeechResult:
+        """Log and return the ERROR result for an empty audio stream."""
+        _LOGGER.warning("Received empty audio stream for model %s", self._model.id)
+        return SpeechResult(text=None, result=SpeechResultState.ERROR)
+
+    def _api_error_result(
+        self, err: Exception, byte_count: int, language: str, elapsed_ms: float
+    ) -> SpeechResult:
+        """Push api-error stats and return the ERROR result."""
+        _LOGGER.error("Transcription failed for model %s: %s", self._model.id, err)
+        self._push_stats(
+            TranscriptionStats(
+                success=False,
+                api_error=True,
+                duration_ms=elapsed_ms,
+                audio_bytes=byte_count,
+                audio_seconds=byte_count / _PCM_BYTES_PER_SECOND,
+                language=language,
+            )
+        )
+        return SpeechResult(text=None, result=SpeechResultState.ERROR)
+
     async def async_process_audio_stream(
         self, metadata: SpeechMetadata, stream: AsyncIterable[bytes]
     ) -> SpeechResult:
         """Process an audio stream and return transcribed text.
+
+        Pre-reads to the first non-empty chunk so a silent utterance (a common
+        false wake-word) never opens a server session. Then feeds audio to the
+        server over the WebSocket streaming endpoint as chunks arrive; if the WS
+        handshake fails, falls back once to buffering and using the sync POST
+        endpoint.
 
         Args:
             metadata: Audio metadata (format, codec, sample rate, etc.).
@@ -176,46 +208,80 @@ class CortexSTTEntity(SpeechToTextEntity):
         Returns:
             SpeechResult with transcribed text or error.
         """
-        # Collect audio bytes
-        chunks: list[bytes] = []
-        async for chunk in stream:
-            chunks.append(chunk)
-        audio_data = b"".join(chunks)
+        # Identify the capture device BEFORE touching the stream — once the
+        # generator is exhausted its frame (and the PipelineRun reference
+        # inside it) is gone. Best-effort: None simply omits the field.
+        # (`hass` is unset when the entity hasn't been added to HA, e.g.
+        # in unit tests.)
+        hass = getattr(self, "hass", None)
+        capture_device = resolve_capture_device(hass, stream) if hass else None
 
-        if not audio_data:
-            _LOGGER.warning("Received empty audio stream for model %s", self._model.id)
-            return SpeechResult(text=None, result=SpeechResultState.ERROR)
+        # Pre-read until the first non-empty chunk. An empty stream must resolve
+        # locally (no server contact: no engine slot, no zero-sample finalize,
+        # no history row).
+        stream_iter = aiter(stream)
+        first_chunk = b""
+        while True:
+            try:
+                chunk = await anext(stream_iter)
+            except StopAsyncIteration:
+                break
+            if chunk:
+                first_chunk = chunk
+                break
+        if not first_chunk:
+            return self._empty_result()
 
-        _LOGGER.debug(
-            "Audio received: %d bytes, model=%s, language=%s",
-            len(audio_data),
-            self._model.id,
-            metadata.language,
-        )
+        byte_count = 0
 
-        audio_seconds = len(audio_data) / _PCM_BYTES_PER_SECOND
+        async def _tracked_stream() -> AsyncIterable[bytes]:
+            nonlocal byte_count
+            byte_count += len(first_chunk)
+            yield first_chunk
+            async for chunk in stream_iter:
+                byte_count += len(chunk)
+                yield chunk
+
+        tracked = _tracked_stream()
         t0 = time.monotonic()
 
         try:
-            result = await self._client.transcribe(
-                audio_data, self._model.id, metadata.language
+            result = await self._client.transcribe_stream(
+                tracked, self._model.id, metadata.language, capture_device
             )
-        except (aiohttp.ClientError, TimeoutError) as err:
-            _LOGGER.error("Transcription failed for model %s: %s", self._model.id, err)
-            elapsed_ms = (time.monotonic() - t0) * 1000
-            self._push_stats(
-                TranscriptionStats(
-                    success=False,
-                    api_error=True,
-                    duration_ms=elapsed_ms,
-                    audio_bytes=len(audio_data),
-                    audio_seconds=audio_seconds,
-                    language=metadata.language,
+        except CortexSTTStreamConnectError as err:
+            _LOGGER.warning(
+                "WS stream unavailable for model %s, falling back to POST: %s",
+                self._model.id,
+                err,
+            )
+            # Handshake failed before any chunk was fed: drain the still-fresh
+            # tracked stream (first chunk + remainder) and POST once.
+            chunks: list[bytes] = []
+            async for chunk in tracked:
+                chunks.append(chunk)
+            try:
+                result = await self._client.transcribe(
+                    b"".join(chunks), self._model.id, metadata.language, capture_device
                 )
+            except (aiohttp.ClientError, TimeoutError) as err2:
+                return self._api_error_result(
+                    err2, byte_count, metadata.language, (time.monotonic() - t0) * 1000
+                )
+        except (aiohttp.ClientError, TimeoutError) as err:
+            return self._api_error_result(
+                err, byte_count, metadata.language, (time.monotonic() - t0) * 1000
             )
-            return SpeechResult(text=None, result=SpeechResultState.ERROR)
 
         elapsed_ms = (time.monotonic() - t0) * 1000
+        audio_seconds = byte_count / _PCM_BYTES_PER_SECOND
+
+        _LOGGER.debug(
+            "Audio received: %d bytes, model=%s, language=%s",
+            byte_count,
+            self._model.id,
+            metadata.language,
+        )
 
         if not result.text:
             _LOGGER.debug("No speech recognized by model %s", self._model.id)
@@ -224,7 +290,7 @@ class CortexSTTEntity(SpeechToTextEntity):
                     success=False,
                     api_error=False,
                     duration_ms=elapsed_ms,
-                    audio_bytes=len(audio_data),
+                    audio_bytes=byte_count,
                     audio_seconds=audio_seconds,
                     language=metadata.language,
                 )
@@ -246,7 +312,7 @@ class CortexSTTEntity(SpeechToTextEntity):
                 success=True,
                 api_error=False,
                 duration_ms=elapsed_ms,
-                audio_bytes=len(audio_data),
+                audio_bytes=byte_count,
                 audio_seconds=audio_seconds,
                 language=metadata.language,
                 raw_text=result.text,

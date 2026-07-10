@@ -24,12 +24,11 @@ async def async_get_config_entry_diagnostics(
         {
             "id": m.id,
             "name": m.name,
-            "engine_type": m.engine_type,
             "status": m.status,
             "size_mb": m.size_mb,
-            "supported_languages": m.supported_languages,
+            "languages": m.languages,
             "is_loaded": m.is_loaded,
-            "is_recommended": m.is_recommended,
+            "recommended": m.recommended,
         }
         for m in runtime_data.models
     ]

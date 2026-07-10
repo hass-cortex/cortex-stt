@@ -24,10 +24,9 @@ def _make_entry() -> MagicMock:
                 id="whisper-small",
                 name="Whisper Small",
                 description="",
-                engine_type="whisper",
                 status="downloaded",
                 size_mb=500,
-                supported_languages=["en", "zh"],
+                languages=["en", "zh"],
             )
         ],
         sensors_by_model={"whisper-small": [MagicMock(), MagicMock()]},
@@ -65,15 +64,15 @@ async def test_options_are_included():
 
 @pytest.mark.asyncio
 async def test_models_are_dumped_without_private_fields():
-    """Discovered models are listed by id and engine_type."""
+    """Discovered models are listed by id and languages."""
     entry = _make_entry()
     result = await async_get_config_entry_diagnostics(MagicMock(), entry)
 
     assert len(result["models"]) == 1
     model = result["models"][0]
     assert model["id"] == "whisper-small"
-    assert model["engine_type"] == "whisper"
-    assert model["supported_languages"] == ["en", "zh"]
+    assert "engine_type" not in model
+    assert model["languages"] == ["en", "zh"]
 
 
 @pytest.mark.asyncio
