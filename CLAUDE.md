@@ -1,6 +1,6 @@
 # cortex-stt
 
-HA custom integration for Cortex STT multi-engine speech-to-text.
+HA custom integration for Cortex STT multi-model speech-to-text.
 
 ## Tech Stack
 
@@ -22,6 +22,7 @@ uv run ruff format .
 ```
 custom_components/cortex_stt/
 ├── __init__.py          # Entry point: async_setup_entry, model discovery
+├── capture.py           # Capture-device identification: PipelineRun stream introspection + stt-corrector ContextVar relay
 ├── client.py            # HTTP client for Cortex STT API
 ├── config_flow.py       # Setup flow: host URL + API key
 ├── coordinator.py       # DataUpdateCoordinator for engine status polling

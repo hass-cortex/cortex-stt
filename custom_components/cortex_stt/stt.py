@@ -23,6 +23,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from .capture import resolve_capture_device
 from .client import (
     CortexSTTClient,
     CortexSTTStreamConnectError,
@@ -207,6 +208,14 @@ class CortexSTTEntity(SpeechToTextEntity):
         Returns:
             SpeechResult with transcribed text or error.
         """
+        # Identify the capture device BEFORE touching the stream — once the
+        # generator is exhausted its frame (and the PipelineRun reference
+        # inside it) is gone. Best-effort: None simply omits the field.
+        # (`hass` is unset when the entity hasn't been added to HA, e.g.
+        # in unit tests.)
+        hass = getattr(self, "hass", None)
+        capture_device = resolve_capture_device(hass, stream) if hass else None
+
         # Pre-read until the first non-empty chunk. An empty stream must resolve
         # locally (no server contact: no engine slot, no zero-sample finalize,
         # no history row).
@@ -238,7 +247,7 @@ class CortexSTTEntity(SpeechToTextEntity):
 
         try:
             result = await self._client.transcribe_stream(
-                tracked, self._model.id, metadata.language
+                tracked, self._model.id, metadata.language, capture_device
             )
         except CortexSTTStreamConnectError as err:
             _LOGGER.warning(
@@ -253,7 +262,7 @@ class CortexSTTEntity(SpeechToTextEntity):
                 chunks.append(chunk)
             try:
                 result = await self._client.transcribe(
-                    b"".join(chunks), self._model.id, metadata.language
+                    b"".join(chunks), self._model.id, metadata.language, capture_device
                 )
             except (aiohttp.ClientError, TimeoutError) as err2:
                 return self._api_error_result(

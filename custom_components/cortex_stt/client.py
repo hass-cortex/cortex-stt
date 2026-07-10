@@ -157,7 +157,11 @@ class CortexSTTClient:
         )
 
     async def transcribe(
-        self, audio_data: bytes, model_id: str, language: str
+        self,
+        audio_data: bytes,
+        model_id: str,
+        language: str,
+        capture_device: str | None = None,
     ) -> TranscribeResult:
         """Transcribe audio using a specific model.
 
@@ -165,6 +169,8 @@ class CortexSTTClient:
             audio_data: Raw WAV audio bytes.
             model_id: Model ID to use for transcription.
             language: BCP-47 language code.
+            capture_device: Microphone/satellite that recorded the audio
+                (persisted on the server's history record).
 
         Returns:
             TranscribeResult with text and timing information.
@@ -175,6 +181,8 @@ class CortexSTTClient:
             "sample_rate": "16000",
             "channels": "1",
         }
+        if capture_device:
+            params["capture_device"] = capture_device
         async with self._session.post(
             f"{self._host}/api/transcribe",
             headers={**self._headers, "Content-Type": "application/octet-stream"},
@@ -198,6 +206,7 @@ class CortexSTTClient:
         audio_stream: AsyncIterable[bytes],
         model_id: str,
         language: str,
+        capture_device: str | None = None,
     ) -> TranscribeResult:
         """Transcribe a live audio stream over the WebSocket endpoint.
 
@@ -235,6 +244,8 @@ class CortexSTTClient:
         }
         if language:
             start["language"] = language
+        if capture_device:
+            start["capture_device"] = capture_device
 
         # ── Connect (fallback-eligible; never surface the URL) ──
         try:

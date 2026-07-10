@@ -67,7 +67,7 @@ def _stream_returns(result: TranscribeResult):
     Draining mirrors the real client so stt.py's byte counter is populated.
     """
 
-    async def _run(audio_stream, model_id, language):
+    async def _run(audio_stream, model_id, language, capture_device=None):
         async for _ in audio_stream:
             pass
         return result
@@ -82,7 +82,7 @@ def _stream_raises(exc: Exception, *, consume: bool = True):
     raises before any chunk is read.
     """
 
-    async def _run(audio_stream, model_id, language):
+    async def _run(audio_stream, model_id, language, capture_device=None):
         if consume:
             async for _ in audio_stream:
                 pass
