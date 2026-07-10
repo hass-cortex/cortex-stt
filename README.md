@@ -24,9 +24,11 @@ Each downloaded model on the server becomes its own STT entity in Home Assistant
 ## Features
 
 - **Multi-model STT** -- Whisper, Parakeet, SenseVoice, Qwen3-ASR, and more served by the Cortex STT Server
+- **WebSocket streaming** -- audio is fed to the server while you are still speaking, so decoding overlaps capture; falls back to a single POST automatically if the stream cannot be opened
 - **Per-model entities** -- one STT entity, one `model loaded` binary sensor, and eleven diagnostic sensors per downloaded model
 - **Automatic model discovery** -- discovers everything on the server at setup, then adds/removes entities live as models are downloaded or deleted server-side (no reload needed)
 - **Supervisor auto-discovery** -- when the Cortex STT app is installed, the integration is offered automatically with the URL and API key pre-filled (no manual setup needed)
+- **Capture-device attribution** -- each transcription is tagged with the Assist satellite that recorded it, so the server's history can compare transcription quality per microphone (works through [STT Corrector](https://github.com/hass-cortex/stt-corrector) too)
 - **Runtime statistics** -- diagnostic sensors track request counts, inference duration, audio duration, and real-time factor
 
 ## Getting Started
@@ -129,9 +131,9 @@ logger:
 
 The Cortex STT Server requires non-silent audio. Check that your wake-word / VAD is cutting audio cleanly and that the `Last audio duration` sensor is non-zero. If the server replies successfully but with empty text, the integration reports `no_speech` (not `api_error`).
 
-**How do I pick between Whisper, Parakeet, and SenseVoice?**
+**How do I pick between Whisper, Parakeet, SenseVoice, and the rest?**
 
-Each model is exposed as its own STT entity -- just assign the one you want to a voice pipeline. Rough guidance: Parakeet for low-latency English, Whisper for multilingual accuracy, SenseVoice for Asian languages. Use the `Real-time factor` sensor to compare live performance on your hardware.
+Each model is exposed as its own STT entity -- just assign the one you want to a voice pipeline. Rough guidance: Parakeet for low-latency English, Whisper for multilingual accuracy, SenseVoice for Asian languages; the server's catalog marks recommended models per family. Use the `Real-time factor` sensor to compare live performance on your hardware, and the server's history (audio level + capture device) to tell microphone problems apart from model problems.
 
 **My pipeline uses `zh-TW` but the server only reports `zh`. Does that work?**
 
