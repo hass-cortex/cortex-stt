@@ -43,7 +43,11 @@ PARALLEL_UPDATES = 1
 _PCM_BYTES_PER_SECOND = 16000 * 2 * 1
 
 # Common BCP-47 locale variants for base language codes.
-# HA pipelines use locales like "zh-TW", but our server uses base codes "zh".
+# Not about being selectable — HA's language_util.matches() already scores
+# "zh-TW" against a bare "zh". It decides WHICH tag wins: matches() returns a
+# tag from the list below and the pipeline copies it into metadata.language,
+# so advertising the variants is what preserves the region for anything
+# downstream that keys on locale. The addon takes either granularity.
 _LOCALE_VARIANTS: dict[str, list[str]] = {
     "zh": ["zh-TW", "zh-CN", "zh-HK", "zh-Hans", "zh-Hant"],
     "en": ["en-US", "en-GB", "en-AU", "en-IN"],
