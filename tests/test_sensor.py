@@ -276,6 +276,15 @@ class TestUpdateFunctions:
         # Failed with None current returns 0
         assert fn(None, stats_fail) == 0
 
+    def test_total_audio_duration_does_not_drift_over_short_clips(self):
+        """Many short clips sum to the true total, not a multiple of 0.1 min."""
+        fn = _get_desc("total_audio_duration").update_fn
+        stats = TranscriptionStats(success=True, api_error=False, audio_seconds=2.5)
+        total = None
+        for _ in range(100):
+            total = fn(total, stats)
+        assert total == pytest.approx(250 / 60)
+
     def test_last_audio_duration_updates(self):
         """last_audio_duration returns seconds on success."""
         fn = _get_desc("last_audio_duration").update_fn

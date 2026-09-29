@@ -94,10 +94,9 @@ SENSOR_DESCRIPTIONS: tuple[CortexSTTSensorDescription, ...] = (
         state_class=SensorStateClass.TOTAL_INCREASING,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
+        # Accumulate unrounded; rounding a running total drifts per clip.
         update_fn=lambda cur, s: (
-            round(float(cur or 0) + s.audio_seconds / 60, 1)
-            if s.success
-            else (cur or 0)
+            float(cur or 0) + s.audio_seconds / 60 if s.success else (cur or 0)
         ),
     ),
     CortexSTTSensorDescription(
