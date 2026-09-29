@@ -11,7 +11,7 @@ HA custom integration for Cortex STT multi-model speech-to-text.
 ## Build & Test
 
 ```bash
-uv sync
+uv sync --group dev --group test
 uv run pytest tests/ -v
 uv run ruff check .
 uv run ruff format .
