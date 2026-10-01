@@ -48,4 +48,5 @@ custom_components/cortex_stt/
 
 - **Commits**: Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`)
 - **Translations**: `strings.json` is source of truth. `translations/en.json` must be byte-identical.
+- **Keep the `config.abort.reauth_successful` string** while `hacs.json` allows HA < 2026.10: those cores look it up in this domain and show the raw key when missing. From 2026.10 core supplies it itself.
 - **Type annotations**: Required on all public functions. Use `TYPE_CHECKING` guard for HA imports.
