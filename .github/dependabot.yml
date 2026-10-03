@@ -40,6 +40,10 @@ updates:
       - "github-actions"
     cooldown:
       default-days: 7
+    # Major bumps only; minor and patch releases of an action are not worth a PR.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-minor", "version-update:semver-patch"]
     groups:
       actions:
         patterns: ["*"]
