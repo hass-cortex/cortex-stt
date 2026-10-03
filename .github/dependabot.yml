@@ -3,7 +3,7 @@ updates:
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
-      interval: "monthly"
+      interval: "quarterly"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
@@ -12,23 +12,10 @@ updates:
     cooldown:
       default-days: 7
       semver-major-days: 30
-    groups:
-      # All dev tooling (ruff, pyright, commitizen, pre-commit, setuptools, ...)
-      # Minor/patch bumps only — majors get their own PR for manual review
-      dev-deps:
-        patterns: ["*"]
-        exclude-patterns:
-          - "pytest*"
-          - "aioresponses"
-          - "voluptuous"
-        update-types: ["minor", "patch"]
-      # Test dependencies
-      test-deps:
-        patterns:
-          - "pytest*"
-          - "aioresponses"
-          - "voluptuous"
-        update-types: ["minor", "patch"]
+    # Major bumps only; minor and patch releases are not worth a PR.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-minor", "version-update:semver-patch"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
