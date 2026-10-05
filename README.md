@@ -166,14 +166,6 @@ Development versions may contain breaking changes -- revert by running the same 
 
 - **Audio format is fixed** -- the STT entity accepts 16 kHz / 16-bit / mono PCM WAV only. Voice pipelines already produce this format, but custom integrations sending audio directly must match.
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, and contribution guidelines.
-
 ## Acknowledgements
 
 The Cortex STT Server app is built on top of [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) -- the single GGUF/ggml runtime powering every model family.
-
-## License
-
-[MIT](LICENSE)
