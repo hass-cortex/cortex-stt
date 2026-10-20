@@ -116,7 +116,13 @@ class CortexSTTConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         the same uuid but a different api_key (admin rotated it in the addon's
         options) auto-updates the stored credentials — no manual reauth.
         """
-        _LOGGER.debug("Supervisor discovery info: %s", discovery_info)
+        # The payload carries the api_key; log only the non-secret fields.
+        _LOGGER.debug(
+            "Supervisor discovery: %s (slug=%s, uuid=%s)",
+            discovery_info.name,
+            discovery_info.slug,
+            discovery_info.uuid,
+        )
 
         host = f"http://{discovery_info.config['host']}:{discovery_info.config['port']}"
         api_key = discovery_info.config["api_key"]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
@@ -159,6 +160,18 @@ async def test_step_hassio_shows_confirm_form():
 
     assert result["type"] == "form"
     assert result["step_id"] == "hassio_confirm"
+
+
+@pytest.mark.asyncio
+async def test_step_hassio_never_logs_the_api_key(caplog):
+    """A debug log posted for support must not leak a working key."""
+    caplog.set_level(logging.DEBUG, logger="custom_components.cortex_stt")
+    flow = _make_flow()
+
+    with patch.object(flow, "_abort_if_unique_id_configured"):
+        await flow.async_step_hassio(_make_hassio_discovery(api_key="s3cret-key"))
+
+    assert "s3cret-key" not in caplog.text
 
 
 @pytest.mark.asyncio
