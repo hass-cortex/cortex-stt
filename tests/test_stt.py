@@ -67,7 +67,7 @@ def _stream_returns(result: TranscribeResult):
     Draining mirrors the real client so stt.py's byte counter is populated.
     """
 
-    async def _run(audio_stream, model_id, language, capture_device=None, quant=None):
+    async def _run(audio_stream, model_id, language, capture_device=None):
         async for _ in audio_stream:
             pass
         return result
@@ -82,7 +82,7 @@ def _stream_raises(exc: Exception, *, consume: bool = True):
     raises before any chunk is read.
     """
 
-    async def _run(audio_stream, model_id, language, capture_device=None, quant=None):
+    async def _run(audio_stream, model_id, language, capture_device=None):
         if consume:
             async for _ in audio_stream:
                 pass
@@ -223,8 +223,8 @@ class TestAsyncProcessAudioStream:
         assert result.result == "success"
         assert result.text == "hello world"
         mock_client.transcribe_stream.assert_awaited_once()
-        # The entity names its own quant, never leaving it to the Preferred one.
-        assert mock_client.transcribe_stream.await_args.kwargs["quant"] == "Q8_0"
+        # The entity names its own Variant; the app never picks a quant for it.
+        assert mock_client.transcribe_stream.await_args.args[1] == "whisper-small:Q8_0"
 
     @pytest.mark.asyncio
     async def test_transcription_api_error(self):
@@ -309,7 +309,7 @@ class TestAsyncProcessAudioStream:
         mock_client.transcribe.assert_awaited_once()
         posted_audio = mock_client.transcribe.await_args.args[0]
         assert len(posted_audio) == 32000
-        assert mock_client.transcribe.await_args.kwargs["quant"] == "Q8_0"
+        assert mock_client.transcribe.await_args.args[1] == "whisper-small:Q8_0"
         assert pushed_stats[0].success is True
 
     @pytest.mark.asyncio

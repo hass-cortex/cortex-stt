@@ -39,8 +39,8 @@ custom_components/cortex_stt/
 
 ### Key Design Patterns
 
-- **One device per Variant**: each installed quant of a model (app ADR 0007) is its own HA device -- 1 STT entity, 11 sensors, 1 binary sensor -- keyed `{entry_id}_{model}:{quant}` (a Custom model keeps `{entry_id}_{model}`), named with the quant even when it is the only one. Every request names the quant.
-- **Upgrade migration**: `migration.py` rewrites each pre-Variant device identifier and entity unique id in place to the Variant the model was serving (its Preferred variant), before platforms load and before stale-device removal -- so entity ids, pipelines and stt-corrector references survive. Old ids are matched whole, never by prefix.
+- **One device per Variant**: each installed quant of a model (app ADR 0007) is its own HA device -- 1 STT entity, 11 sensors, 1 binary sensor -- keyed `{entry_id}_{model}:{quant}` (a Custom model keeps `{entry_id}_{model}`), named with the quant even when it is the only one. Every request names its Variant key (`model:quant`) in `model`; the app never picks a quant for it.
+- **Upgrade migration**: `migration.py` rewrites each pre-Variant device identifier and entity unique id in place to the Variant the model was serving (its earliest installed), before platforms load and before stale-device removal -- so entity ids, pipelines and stt-corrector references survive. Old ids are matched whole, never by prefix.
 - **App requirement**: `/api/models` must carry `variants`; an older app raises `CortexSTTAppTooOldError` -> repair issue `app_too_old` + `ConfigEntryNotReady` (retries until the app is updated).
 - **Sensor push updates**: STT entity calls `_push_stats()` after each transcription. Sensors filter by Variant key and use `RestoreSensor` for state persistence.
 - **Coordinator polling**: Binary sensor uses `DataUpdateCoordinator` to poll GET /api/engine every 30s for model load status.

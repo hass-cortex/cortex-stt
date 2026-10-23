@@ -455,7 +455,6 @@ def make_model(quants=("Q8_0",), **overrides):
         "status": "downloaded" if quants else "available",
         "size_mb": 500,
         "languages": ["en", "zh"],
-        "preferred_quant": quants[0] if quants else None,
         "variants": [VariantInfo(quant=q, status="downloaded") for q in quants],
     }
     defaults.update(overrides)

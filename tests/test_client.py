@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 from collections.abc import AsyncIterator
+from urllib.parse import unquote
 
 import aiohttp
 import pytest
@@ -135,7 +136,6 @@ async def test_list_models(mock_aiohttp, client):
                 "languages": ["en", "zh"],
                 "is_loaded": True,
                 "recommended": True,
-                "preferred_quant": "Q8_0",
                 "variants": [
                     {"quant": "Q4_K_M", "status": "downloaded", "size_mb": 900},
                     {"quant": "Q8_0", "status": "downloaded", "is_loaded": True},
@@ -157,7 +157,6 @@ async def test_list_models(mock_aiohttp, client):
     assert isinstance(m0, ModelInfo)
     assert m0.id == "whisper-large-v3"
     assert m0.languages == ["en", "zh"]
-    assert m0.preferred_quant == "Q8_0"
     assert [(v.quant, v.status) for v in m0.variants] == [
         ("Q4_K_M", "downloaded"),
         ("Q8_0", "downloaded"),
@@ -173,7 +172,6 @@ async def test_list_models(mock_aiohttp, client):
     assert m1.description == ""
     assert m1.status == "unknown"
     assert m1.languages == []
-    assert m1.preferred_quant is None
     assert m1.variants == []
 
 
@@ -199,10 +197,7 @@ async def test_engine_status(mock_aiohttp, client):
         f"{BASE_URL}/api/engine",
         payload={
             "loaded_models": ["whisper-large-v3", "my-custom"],
-            "loaded_variants": [
-                {"model": "whisper-large-v3", "quant": "Q8_0"},
-                {"model": "my-custom", "quant": None},
-            ],
+            "loaded_variants": ["whisper-large-v3:Q8_0", "my-custom"],
             "loaded_count": 2,
         },
     )
@@ -258,9 +253,8 @@ async def test_transcribe_with_correct_params(mock_aiohttp, client):
 
     await client.transcribe(
         audio_data=b"\x00" * 10,
-        model_id="parakeet",
+        model_id="parakeet:Q4_K_M",
         language="zh",
-        quant="Q4_K_M",
     )
 
     # aioresponses records calls -- inspect the last request
@@ -275,8 +269,9 @@ async def test_transcribe_with_correct_params(mock_aiohttp, client):
     url = post_calls[0][0][1]
     query = url.query
 
-    assert query["model"] == "parakeet"
-    assert query["quant"] == "Q4_K_M"
+    # aioresponses records the query still percent-encoded.
+    assert unquote(query["model"]) == "parakeet:Q4_K_M"
+    assert "quant" not in query
     assert query["language"] == "zh"
     assert query["sample_rate"] == "16000"
     assert query["channels"] == "1"
@@ -386,9 +381,8 @@ async def test_transcribe_stream_happy_path():
         client = _client_for(server, session)
         result = await client.transcribe_stream(
             _audio_stream([b"\x00" * 320, b"\x11" * 320]),
-            model_id="whisper-small",
+            model_id="whisper-small:Q8_0",
             language="en",
-            quant="Q8_0",
         )
 
         assert isinstance(result, TranscribeResult)
@@ -401,8 +395,8 @@ async def test_transcribe_stream_happy_path():
         assert auth_header["value"] == "Bearer test-key"
         assert auth_header["has_query_key"] is False
         # start control message carried the expected fields
-        assert start_msg["model"] == "whisper-small"
-        assert start_msg["quant"] == "Q8_0"
+        assert start_msg["model"] == "whisper-small:Q8_0"
+        assert "quant" not in start_msg
         assert start_msg["language"] == "en"
         assert start_msg["format"] == "pcm_s16le"
         assert start_msg["sample_rate"] == 16000

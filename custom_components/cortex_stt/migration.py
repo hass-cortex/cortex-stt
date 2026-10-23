@@ -41,7 +41,10 @@ def plan_variant_migration(
     models: Iterable[ModelInfo],
     entity_suffixes: Iterable[str],
 ) -> VariantMigration:
-    """Plan the rewrite of each model's keys to its Preferred variant's.
+    """Plan the rewrite of each model's keys to its earliest-installed Variant's.
+
+    Before Variants a model had one quant on disk; it is the earliest
+    installed, should a second have been added since.
 
     Args:
         entry_id: The config entry the devices and entities belong to.
@@ -60,9 +63,7 @@ def plan_variant_migration(
         installed = [v for v in model.variants if v.status == "downloaded" and v.quant]
         if not installed:
             continue
-        target = next(
-            (v for v in installed if v.quant == model.preferred_quant), installed[0]
-        )
+        target = min(installed, key=lambda v: v.installed_at or 0)
         new = variant_key(model.id, target.quant)
         plan.devices[f"{entry_id}_{model.id}"] = f"{entry_id}_{new}"
         for suffix in suffixes:

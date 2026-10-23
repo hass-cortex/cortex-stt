@@ -257,10 +257,9 @@ class CortexSTTEntity(SpeechToTextEntity):
         try:
             result = await self._client.transcribe_stream(
                 tracked,
-                self._variant.model_id,
+                self._variant.key,
                 metadata.language,
                 capture_device,
-                quant=self._variant.quant,
             )
         except CortexSTTStreamConnectError as err:
             _LOGGER.warning(
@@ -276,10 +275,9 @@ class CortexSTTEntity(SpeechToTextEntity):
             try:
                 result = await self._client.transcribe(
                     b"".join(chunks),
-                    self._variant.model_id,
+                    self._variant.key,
                     metadata.language,
                     capture_device,
-                    quant=self._variant.quant,
                 )
             except (aiohttp.ClientError, TimeoutError) as err2:
                 return self._api_error_result(

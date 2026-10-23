@@ -31,7 +31,6 @@ def _make_model(model_id: str, quants: tuple[str, ...] = ("Q8_0",)) -> ModelInfo
         status="downloaded" if quants else "available",
         size_mb=100,
         languages=["en"],
-        preferred_quant=quants[0] if quants else None,
         variants=[VariantInfo(quant=q, status="downloaded") for q in quants],
     )
 

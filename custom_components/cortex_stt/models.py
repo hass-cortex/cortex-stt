@@ -17,6 +17,7 @@ class VariantInfo:
     status: str
     size_mb: int = 0
     is_loaded: bool = False
+    installed_at: int | None = None
 
 
 @dataclass
@@ -31,7 +32,6 @@ class ModelInfo:
     languages: list[str]
     is_loaded: bool = False
     recommended: bool = False
-    preferred_quant: str | None = None
     variants: list[VariantInfo] = field(default_factory=list)
 
 

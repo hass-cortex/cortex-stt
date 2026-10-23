@@ -15,7 +15,6 @@ from .models import (
     ModelInfo,
     TranscribeResult,
     VariantInfo,
-    variant_key,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -150,13 +149,13 @@ class CortexSTTClient:
                 languages=m.get("languages") or m.get("supported_languages") or [],
                 is_loaded=m.get("is_loaded", False),
                 recommended=m.get("recommended", False),
-                preferred_quant=m.get("preferred_quant"),
                 variants=[
                     VariantInfo(
                         quant=v.get("quant"),
                         status=v.get("status", "unknown"),
                         size_mb=v.get("size_mb", 0),
                         is_loaded=v.get("is_loaded", False),
+                        installed_at=v.get("installed_at"),
                     )
                     for v in m["variants"]
                 ],
@@ -181,10 +180,7 @@ class CortexSTTClient:
         return EngineStatus(
             loaded_models=data.get("loaded_models", []),
             loaded_count=data.get("loaded_count", 0),
-            loaded_variants={
-                variant_key(v["model"], v.get("quant"))
-                for v in data.get("loaded_variants", [])
-            },
+            loaded_variants=set(data.get("loaded_variants", [])),
         )
 
     async def transcribe(
@@ -193,15 +189,13 @@ class CortexSTTClient:
         model_id: str,
         language: str,
         capture_device: str | None = None,
-        quant: str | None = None,
     ) -> TranscribeResult:
-        """Transcribe audio using a specific model.
+        """Transcribe audio using a specific Variant.
 
         Args:
             audio_data: Raw WAV audio bytes.
-            model_id: Model ID to use for transcription.
+            model_id: The Variant key (``model:quant``).
             language: BCP-47 language code.
-            quant: The Variant to use; the model's Preferred variant when None.
             capture_device: Microphone/satellite that recorded the audio
                 (persisted on the server's history record).
 
@@ -216,8 +210,6 @@ class CortexSTTClient:
         }
         if capture_device:
             params["capture_device"] = capture_device
-        if quant:
-            params["quant"] = quant
         async with self._session.post(
             f"{self._host}/api/transcribe",
             headers={**self._headers, "Content-Type": "application/octet-stream"},
@@ -242,7 +234,6 @@ class CortexSTTClient:
         model_id: str,
         language: str,
         capture_device: str | None = None,
-        quant: str | None = None,
     ) -> TranscribeResult:
         """Transcribe a live audio stream over the WebSocket endpoint.
 
@@ -257,10 +248,9 @@ class CortexSTTClient:
 
         Args:
             audio_stream: Async iterable of raw PCM16LE 16kHz mono chunks.
-            model_id: Model ID to use for transcription.
+            model_id: The Variant key (``model:quant``).
             language: BCP-47 language code (sent only when non-empty).
             capture_device: Microphone/satellite that recorded the audio.
-            quant: The Variant to use; the model's Preferred variant when None.
 
         Returns:
             TranscribeResult with text and timing information.
@@ -284,8 +274,6 @@ class CortexSTTClient:
             start["language"] = language
         if capture_device:
             start["capture_device"] = capture_device
-        if quant:
-            start["quant"] = quant
 
         # ── Connect (fallback-eligible; never surface the URL) ──
         try:

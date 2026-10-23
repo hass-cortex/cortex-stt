@@ -18,9 +18,8 @@ ENTRY = "e1"
 SUFFIXES = ["", "_loaded", "_total_requests"]
 
 
-def _model(
-    model_id: str, quants: tuple[str | None, ...], preferred: str | None = None
-) -> ModelInfo:
+def _model(model_id: str, quants: tuple[str | None, ...]) -> ModelInfo:
+    """A model with ``quants`` installed, in install order."""
     return ModelInfo(
         id=model_id,
         name=model_id,
@@ -28,8 +27,10 @@ def _model(
         status="downloaded",
         size_mb=0,
         languages=[],
-        preferred_quant=preferred,
-        variants=[VariantInfo(quant=q, status="downloaded") for q in quants],
+        variants=[
+            VariantInfo(quant=q, status="downloaded", installed_at=100 + i)
+            for i, q in enumerate(quants)
+        ],
     )
 
 
@@ -48,8 +49,10 @@ def test_a_model_moves_onto_the_quant_it_has_installed():
     )
 
 
-def test_with_several_quants_installed_the_preferred_one_inherits():
-    model = _model("whisper-small", ("Q4_K_M", "Q8_0"), preferred="Q8_0")
+def test_with_several_quants_installed_the_earliest_installed_inherits():
+    """The quant a pre-Variant install was serving is the one installed first."""
+    model = _model("whisper-small", ("Q8_0", "Q4_K_M"))
+    model.variants.reverse()  # the app lists catalog order, not install order
     plan = plan_variant_migration(ENTRY, [model], SUFFIXES)
 
     assert plan.devices == {"e1_whisper-small": "e1_whisper-small:Q8_0"}
