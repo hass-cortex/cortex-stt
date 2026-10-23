@@ -13,11 +13,21 @@ from custom_components.cortex_stt.capture import (
 
 
 class PipelineRun:
-    """Shape-compatible stand-in for assist_pipeline's PipelineRun."""
+    """Stand-in for assist_pipeline's PipelineRun (pre-2026.10 shape)."""
 
     def __init__(self, device_id=None, satellite_id=None):
         self._device_id = device_id
         self._satellite_id = satellite_id
+
+    async def _speech_to_text_stream(self):
+        yield b"chunk"
+
+
+class _DefaultPipelineProcessor:
+    """Stand-in for the 2026.10+ processor that owns the STT stream."""
+
+    def __init__(self, host):
+        self.host = host
 
     async def _speech_to_text_stream(self):
         yield b"chunk"
@@ -36,6 +46,23 @@ class TestCaptureDeviceFromStream:
             capture_device_from_stream(_fake_hass(), stream)
             == "assist_satellite.kitchen"
         )
+
+    def test_processor_stream_reaches_run_through_host(self):
+        """HA 2026.10+: the generator belongs to the processor, not the run."""
+        processor = _DefaultPipelineProcessor(
+            PipelineRun(satellite_id="assist_satellite.kitchen")
+        )
+        stream = processor._speech_to_text_stream()
+        assert (
+            capture_device_from_stream(_fake_hass(), stream)
+            == "assist_satellite.kitchen"
+        )
+
+    def test_processor_with_foreign_host_returns_none(self):
+        """A ``host`` that is not a PipelineRun is not trusted."""
+        processor = _DefaultPipelineProcessor(SimpleNamespace(_satellite_id="x"))
+        stream = processor._speech_to_text_stream()
+        assert capture_device_from_stream(_fake_hass(), stream) is None
 
     def test_run_without_ids_returns_none(self):
         run = PipelineRun()

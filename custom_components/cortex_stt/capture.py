@@ -8,8 +8,8 @@ analysis.
 Two sources, tried in order:
 
 1. **Stream introspection** — the assist_pipeline passes its
-   ``PipelineRun._speech_to_text_stream`` bound async generator as the
-   STT audio stream; its frame locals hold the run, which knows the
+   ``_speech_to_text_stream`` bound async generator as the
+   STT audio stream; its frame's ``self`` leads to the run, which knows the
    triggering device. Deterministic under concurrent runs (object
    identity, not timing). Works when the pipeline calls this entity
    directly.
@@ -52,6 +52,20 @@ def capture_context_var(hass: HomeAssistant) -> ContextVar[str | None]:
     return var
 
 
+def _pipeline_run_of(owner: Any) -> Any | None:
+    """Return the PipelineRun behind a stream generator's ``self``.
+
+    Before HA 2026.10 the generator was a ``PipelineRun`` method; since then
+    it belongs to the run's processor, which holds the run as ``host``.
+    """
+    if type(owner).__name__ == "PipelineRun":
+        return owner
+    host = getattr(owner, "host", None)
+    if type(host).__name__ == "PipelineRun":
+        return host
+    return None
+
+
 def capture_device_from_stream(hass: HomeAssistant, stream: Any) -> str | None:
     """Best-effort: name the assist satellite that recorded ``stream``.
 
@@ -63,8 +77,8 @@ def capture_device_from_stream(hass: HomeAssistant, stream: Any) -> str | None:
         frame = getattr(stream, "ag_frame", None)
         if frame is None:
             return None
-        run = frame.f_locals.get("self")
-        if type(run).__name__ != "PipelineRun":
+        run = _pipeline_run_of(frame.f_locals.get("self"))
+        if run is None:
             return None
         device_id: str | None = getattr(run, "_device_id", None)
         satellite_id: str | None = getattr(run, "_satellite_id", None)
