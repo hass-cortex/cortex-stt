@@ -127,6 +127,24 @@ _ha_helpers_dr.DeviceInfo = dict
 _ha_helpers_dr.DeviceEntryType = MagicMock()
 _ha_helpers_dr.DeviceEntryType.SERVICE = "service"
 
+# ── Entity registry ──
+_ha_helpers_er = ModuleType("homeassistant.helpers.entity_registry")
+_ha_helpers_er.async_get = MagicMock()
+_ha_helpers_er.async_entries_for_config_entry = MagicMock(return_value=[])
+
+# ── Issue registry ──
+_ha_helpers_ir = ModuleType("homeassistant.helpers.issue_registry")
+_ha_helpers_ir.async_create_issue = MagicMock()
+_ha_helpers_ir.async_delete_issue = MagicMock()
+
+
+class _IssueSeverity(StrEnum):
+    ERROR = "error"
+    WARNING = "warning"
+
+
+_ha_helpers_ir.IssueSeverity = _IssueSeverity
+
 # ── Entity platform ──
 _ha_helpers_ep.AddConfigEntryEntitiesCallback = MagicMock
 
@@ -372,6 +390,8 @@ for mod_name, mod in [
     ("homeassistant.helpers", _ha_helpers),
     ("homeassistant.helpers.config_validation", _ha_helpers_cv),
     ("homeassistant.helpers.device_registry", _ha_helpers_dr),
+    ("homeassistant.helpers.entity_registry", _ha_helpers_er),
+    ("homeassistant.helpers.issue_registry", _ha_helpers_ir),
     ("homeassistant.helpers.entity_platform", _ha_helpers_ep),
     ("homeassistant.helpers.aiohttp_client", _ha_helpers_aiohttp),
     ("homeassistant.helpers.service_info", _ha_helpers_si),
@@ -424,17 +444,35 @@ def mock_config_entry():
     return entry
 
 
-def make_model(**overrides):
-    """Create a ModelInfo with sensible defaults."""
-    from custom_components.cortex_stt.models import ModelInfo
+def make_model(quants=("Q8_0",), **overrides):
+    """Create a ModelInfo with sensible defaults, one installed Variant per quant."""
+    from custom_components.cortex_stt.models import ModelInfo, VariantInfo
 
     defaults = {
         "id": "whisper-small",
         "name": "Whisper Small",
         "description": "A small model",
-        "status": "downloaded",
+        "status": "downloaded" if quants else "available",
         "size_mb": 500,
         "languages": ["en", "zh"],
+        "preferred_quant": quants[0] if quants else None,
+        "variants": [VariantInfo(quant=q, status="downloaded") for q in quants],
     }
     defaults.update(overrides)
     return ModelInfo(**defaults)
+
+
+def make_variant(**overrides):
+    """Create an installed Variant with sensible defaults."""
+    from custom_components.cortex_stt.models import Variant
+
+    defaults = {
+        "model_id": "whisper-small",
+        "quant": "Q8_0",
+        "model_name": "Whisper Small",
+        "description": "A small model",
+        "languages": ["en", "zh"],
+        "size_mb": 500,
+    }
+    defaults.update(overrides)
+    return Variant(**defaults)

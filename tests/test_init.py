@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import homeassistant.helpers.device_registry as dr
+import homeassistant.helpers.issue_registry as ir
 import pytest
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
@@ -13,18 +14,25 @@ from custom_components.cortex_stt import (
     async_setup_entry,
     async_unload_entry,
 )
-from custom_components.cortex_stt.models import CortexSTTRuntimeData, ModelInfo
+from custom_components.cortex_stt.client import CortexSTTAppTooOldError
+from custom_components.cortex_stt.models import (
+    CortexSTTRuntimeData,
+    ModelInfo,
+    VariantInfo,
+)
 
 
-def _make_model(model_id: str, status: str = "downloaded") -> ModelInfo:
-    """Create a ModelInfo for testing."""
+def _make_model(model_id: str, quants: tuple[str, ...] = ("Q8_0",)) -> ModelInfo:
+    """Create a ModelInfo for testing, one installed Variant per quant."""
     return ModelInfo(
         id=model_id,
         name=model_id,
         description="test model",
-        status=status,
+        status="downloaded" if quants else "available",
         size_mb=100,
         languages=["en"],
+        preferred_quant=quants[0] if quants else None,
+        variants=[VariantInfo(quant=q, status="downloaded") for q in quants],
     )
 
 
@@ -43,8 +51,12 @@ async def test_async_setup_returns_true(mock_hass):
 
 @pytest.mark.asyncio
 async def test_setup_entry_success(mock_hass, mock_config_entry):
-    """Set up entry with valid client and models."""
-    models = [_make_model("whisper-tiny"), _make_model("parakeet-tdt-0.6b-v3")]
+    """Set up entry with one entity set per installed Variant."""
+    models = [
+        _make_model("whisper-tiny", ("Q4_K_M", "Q8_0")),
+        _make_model("parakeet-tdt-0.6b-v3"),
+        _make_model("not-installed", ()),
+    ]
     mock_client = MagicMock()
     mock_client.validate = AsyncMock(return_value=None)
     mock_client.list_models = AsyncMock(return_value=models)
@@ -68,7 +80,11 @@ async def test_setup_entry_success(mock_hass, mock_config_entry):
     assert result is True
     assert isinstance(mock_config_entry.runtime_data, CortexSTTRuntimeData)
     assert mock_config_entry.runtime_data.client is mock_client
-    assert len(mock_config_entry.runtime_data.models) == 2
+    assert {v.key for v in mock_config_entry.runtime_data.variants} == {
+        "whisper-tiny:Q4_K_M",
+        "whisper-tiny:Q8_0",
+        "parakeet-tdt-0.6b-v3:Q8_0",
+    }
     mock_hass.config_entries.async_forward_entry_setups.assert_called_once_with(
         mock_config_entry, ["stt", "sensor", "binary_sensor"]
     )
@@ -157,7 +173,7 @@ async def test_setup_entry_stale_device_removal(mock_hass, mock_config_entry):
     # Current device that should NOT be removed
     current_device = MagicMock()
     current_device.id = "device_current"
-    current_device.identifiers = {("cortex_stt", "test_entry_123_whisper-tiny")}
+    current_device.identifiers = {("cortex_stt", "test_entry_123_whisper-tiny:Q8_0")}
 
     mock_device_reg = MagicMock()
     dr.async_get = MagicMock(return_value=mock_device_reg)
@@ -180,6 +196,57 @@ async def test_setup_entry_stale_device_removal(mock_hass, mock_config_entry):
     assert result is True
     # Stale device removed, current device kept
     mock_device_reg.async_remove_device.assert_called_once_with("device_stale")
+
+
+@pytest.mark.asyncio
+async def test_setup_waits_for_an_app_without_variants(mock_hass, mock_config_entry):
+    """An app older than Variants: retry later, and say why in a repair."""
+    mock_client = MagicMock()
+    mock_client.validate = AsyncMock(return_value=None)
+    mock_client.list_models = AsyncMock(side_effect=CortexSTTAppTooOldError())
+    ir.async_create_issue.reset_mock()
+
+    with (
+        patch(
+            "custom_components.cortex_stt.async_get_clientsession",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "custom_components.cortex_stt.CortexSTTClient",
+            return_value=mock_client,
+        ),
+        pytest.raises(ConfigEntryNotReady) as exc_info,
+    ):
+        await async_setup_entry(mock_hass, mock_config_entry)
+
+    assert exc_info.value.translation_key == "app_too_old"
+    assert ir.async_create_issue.call_args.args[2] == "app_too_old"
+    mock_hass.config_entries.async_forward_entry_setups.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_setup_clears_the_app_too_old_repair(mock_hass, mock_config_entry):
+    """Once the app reports Variants, the repair goes away."""
+    mock_client = MagicMock()
+    mock_client.validate = AsyncMock(return_value=None)
+    mock_client.list_models = AsyncMock(return_value=[_make_model("whisper-tiny")])
+    dr.async_get = MagicMock(return_value=MagicMock())
+    dr.async_entries_for_config_entry = MagicMock(return_value=[])
+    ir.async_delete_issue.reset_mock()
+
+    with (
+        patch(
+            "custom_components.cortex_stt.async_get_clientsession",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "custom_components.cortex_stt.CortexSTTClient",
+            return_value=mock_client,
+        ),
+    ):
+        await async_setup_entry(mock_hass, mock_config_entry)
+
+    assert ir.async_delete_issue.call_args.args[2] == "app_too_old"
 
 
 # ── async_unload_entry ──

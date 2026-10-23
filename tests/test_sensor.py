@@ -8,8 +8,8 @@ import pytest
 
 from custom_components.cortex_stt.models import (
     CortexSTTRuntimeData,
-    ModelInfo,
     TranscriptionStats,
+    Variant,
 )
 from custom_components.cortex_stt.sensor import (
     SENSOR_DESCRIPTIONS,
@@ -26,23 +26,21 @@ def _get_desc(key: str) -> CortexSTTSensorDescription:
     return next(d for d in SENSOR_DESCRIPTIONS if d.key == key)
 
 
-def _make_model(**overrides) -> ModelInfo:
-    """Create a ModelInfo with sensible defaults."""
-    defaults = {
-        "id": "whisper-small",
-        "name": "Whisper Small",
-        "description": "",
-        "status": "downloaded",
-        "size_mb": 500,
-        "languages": ["en"],
-    }
-    defaults.update(overrides)
-    return ModelInfo(**defaults)
+def _make_variant(
+    quant: str | None = "Q8_0", model_id: str = "whisper-small"
+) -> Variant:
+    """Create an installed Variant with sensible defaults."""
+    return Variant(
+        model_id=model_id,
+        quant=quant,
+        model_name="Whisper Small",
+        description="",
+        languages=["en"],
+    )
 
 
 def _make_sensor(
-    model_id: str = "whisper-small",
-    model_name: str = "Whisper Small",
+    variant_key: str = "whisper-small:Q8_0",
     desc_key: str = "total_requests",
     entry_id: str = "test_entry",
 ) -> tuple[CortexSTTSensor, MagicMock]:
@@ -58,7 +56,7 @@ def _make_sensor(
     config_entry.entry_id = entry_id
     config_entry.runtime_data = runtime_data
 
-    sensor = CortexSTTSensor(config_entry, model_id, model_name, desc)
+    sensor = CortexSTTSensor(config_entry, variant_key, desc)
     return sensor, config_entry
 
 
@@ -69,14 +67,11 @@ class TestAsyncSetupEntry:
     """Tests for async_setup_entry sensor creation."""
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_creates_sensors(self):
-        """2 models x 11 descriptions = 22 sensor entities."""
-        models = [
-            _make_model(id="whisper-small", name="Whisper Small"),
-            _make_model(id="whisper-large", name="Whisper Large"),
-        ]
+    async def test_two_quants_of_one_model_get_separate_sensors(self):
+        """Each Variant gets every sensor, and no unique id is shared."""
+        variants = [_make_variant("Q4_K_M"), _make_variant("Q8_0")]
         mock_client = AsyncMock()
-        runtime_data = CortexSTTRuntimeData(client=mock_client, models=models)
+        runtime_data = CortexSTTRuntimeData(client=mock_client, variants=variants)
 
         config_entry = MagicMock()
         config_entry.entry_id = "test_entry"
@@ -87,18 +82,22 @@ class TestAsyncSetupEntry:
 
         await async_setup_entry(MagicMock(), config_entry, mock_add_entities)
 
-        assert len(added_entities) == 2 * len(SENSOR_DESCRIPTIONS)
-        assert len(added_entities) == 22
+        unique_ids = [e._attr_unique_id for e in added_entities]
+        assert len(set(unique_ids)) == len(unique_ids)
+        for variant in variants:
+            tracked = {e.variant_key for e in added_entities}
+            assert variant.key in tracked
 
-    def test_sensor_unique_id_format(self):
-        """unique_id follows cortex_stt_{entry_id}_{model_id}_{key} pattern."""
+    def test_sensor_unique_id_is_keyed_by_variant(self):
+        """The persisted unique id names the Variant and the sensor."""
         sensor, _ = _make_sensor(
-            model_id="whisper-small",
+            variant_key="whisper-small:Q8_0",
             desc_key="total_requests",
             entry_id="abc123",
         )
         assert (
-            sensor._attr_unique_id == "cortex_stt_abc123_whisper-small_total_requests"
+            sensor._attr_unique_id
+            == "cortex_stt_abc123_whisper-small:Q8_0_total_requests"
         )
 
 
@@ -135,26 +134,26 @@ class TestSensorLifecycle:
 
     @pytest.mark.asyncio
     async def test_async_added_to_hass_registers_sensor(self):
-        """Sensor is appended to runtime_data.sensors_by_model[model_id] on add."""
+        """Sensor is appended to runtime_data.sensors_by_variant[variant_key] on add."""
         sensor, config_entry = _make_sensor()
         sensor.async_get_last_sensor_data = AsyncMock(return_value=None)
 
         await sensor.async_added_to_hass()
 
-        channels = config_entry.runtime_data.sensors_by_model[sensor.model_id]
+        channels = config_entry.runtime_data.sensors_by_variant[sensor.variant_key]
         assert sensor in channels
 
     @pytest.mark.asyncio
     async def test_async_will_remove_from_hass(self):
-        """Sensor is removed from runtime_data.sensors_by_model on removal."""
+        """Sensor is removed from runtime_data.sensors_by_variant on removal."""
         sensor, config_entry = _make_sensor()
-        config_entry.runtime_data.sensors_by_model.setdefault(
-            sensor.model_id, []
+        config_entry.runtime_data.sensors_by_variant.setdefault(
+            sensor.variant_key, []
         ).append(sensor)
 
         await sensor.async_will_remove_from_hass()
 
-        channels = config_entry.runtime_data.sensors_by_model[sensor.model_id]
+        channels = config_entry.runtime_data.sensors_by_variant[sensor.variant_key]
         assert sensor not in channels
 
 

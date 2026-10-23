@@ -26,9 +26,10 @@ custom_components/cortex_stt/
 ├── client.py            # HTTP client for Cortex STT API
 ├── config_flow.py       # Setup flow: host URL + API key
 ├── coordinator.py       # DataUpdateCoordinator for engine status polling
-├── stt.py               # Per-model STT entities (one per downloaded model)
-├── sensor.py            # Per-model diagnostic sensors (11 per model)
-├── binary_sensor.py     # Per-model "model loaded" binary sensor
+├── stt.py               # Per-Variant STT entities (one per installed quant of a model)
+├── sensor.py            # Per-Variant diagnostic sensors (11 each)
+├── binary_sensor.py     # Per-Variant "model loaded" binary sensor
+├── migration.py         # Moves pre-Variant devices/entities onto Variants (entity ids kept)
 ├── entity_setup.py      # async_setup_dynamic_models: live add via event signal
 ├── models.py            # Runtime data, model info, transcription stats
 ├── const.py             # Constants (incl. EVENT_MODELS_CHANGED, models_changed_signal)
@@ -38,8 +39,10 @@ custom_components/cortex_stt/
 
 ### Key Design Patterns
 
-- **One device per model**: Each downloaded model gets its own HA device with 1 STT entity, 11 sensors, and 1 binary sensor (13 total).
-- **Sensor push updates**: STT entity calls `_push_stats()` after each transcription. Sensors filter by `model_id` and use `RestoreSensor` for state persistence.
+- **One device per Variant**: each installed quant of a model (app ADR 0007) is its own HA device -- 1 STT entity, 11 sensors, 1 binary sensor -- keyed `{entry_id}_{model}:{quant}` (a Custom model keeps `{entry_id}_{model}`), named with the quant even when it is the only one. Every request names the quant.
+- **Upgrade migration**: `migration.py` rewrites each pre-Variant device identifier and entity unique id in place to the Variant the model was serving (its Preferred variant), before platforms load and before stale-device removal -- so entity ids, pipelines and stt-corrector references survive. Old ids are matched whole, never by prefix.
+- **App requirement**: `/api/models` must carry `variants`; an older app raises `CortexSTTAppTooOldError` -> repair issue `app_too_old` + `ConfigEntryNotReady` (retries until the app is updated).
+- **Sensor push updates**: STT entity calls `_push_stats()` after each transcription. Sensors filter by Variant key and use `RestoreSensor` for state persistence.
 - **Coordinator polling**: Binary sensor uses `DataUpdateCoordinator` to poll GET /api/engine every 30s for model load status.
 - **Shared session**: Uses `async_get_clientsession(hass)` -- never creates own `aiohttp.ClientSession`.
 - **Live model sync (event bus)**: Model add/remove appears with **no config-entry reload** — the addon fires an HA event (`cortex_stt_models_changed`) via the Supervisor proxy and `async_setup_entry` listens on the bus to reconcile.

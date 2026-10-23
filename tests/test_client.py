@@ -13,6 +13,7 @@ from aioresponses import aioresponses
 
 from custom_components.cortex_stt import client as client_module
 from custom_components.cortex_stt.client import (
+    CortexSTTAppTooOldError,
     CortexSTTClient,
     CortexSTTStreamConnectError,
     CortexSTTStreamError,
@@ -21,6 +22,7 @@ from custom_components.cortex_stt.models import (
     EngineStatus,
     ModelInfo,
     TranscribeResult,
+    installed_variants,
 )
 
 BASE_URL = "http://localhost:8769"
@@ -120,7 +122,7 @@ async def test_validate_engine_connection_error(mock_aiohttp, client):
 
 
 async def test_list_models(mock_aiohttp, client):
-    """GET /api/models parses ModelInfo list with defaults for missing fields."""
+    """GET /api/models parses each model and its Variants, defaulting the rest."""
     mock_aiohttp.get(
         f"{BASE_URL}/api/models",
         payload=[
@@ -133,10 +135,17 @@ async def test_list_models(mock_aiohttp, client):
                 "languages": ["en", "zh"],
                 "is_loaded": True,
                 "recommended": True,
+                "preferred_quant": "Q8_0",
+                "variants": [
+                    {"quant": "Q4_K_M", "status": "downloaded", "size_mb": 900},
+                    {"quant": "Q8_0", "status": "downloaded", "is_loaded": True},
+                    {"quant": "F16", "status": "downloading"},
+                ],
             },
             {
                 "id": "parakeet-tdt-0.6b-v3",
                 "name": "Parakeet TDT 0.6B v3",
+                "variants": [],
                 # Missing optional fields -- should use defaults
             },
         ],
@@ -144,66 +153,64 @@ async def test_list_models(mock_aiohttp, client):
 
     models = await client.list_models()
 
-    assert len(models) == 2
-
     m0 = models[0]
     assert isinstance(m0, ModelInfo)
     assert m0.id == "whisper-large-v3"
-    assert m0.name == "Whisper Large V3"
-    assert m0.description == "OpenAI Whisper"
-    assert m0.status == "downloaded"
-    assert m0.size_mb == 3000
     assert m0.languages == ["en", "zh"]
-    assert m0.is_loaded is True
-    assert m0.recommended is True
+    assert m0.preferred_quant == "Q8_0"
+    assert [(v.quant, v.status) for v in m0.variants] == [
+        ("Q4_K_M", "downloaded"),
+        ("Q8_0", "downloaded"),
+        ("F16", "downloading"),
+    ]
+    assert m0.variants[1].is_loaded is True
+    assert [v.key for v in installed_variants(models)] == [
+        "whisper-large-v3:Q4_K_M",
+        "whisper-large-v3:Q8_0",
+    ]
 
     m1 = models[1]
-    assert m1.id == "parakeet-tdt-0.6b-v3"
-    assert m1.name == "Parakeet TDT 0.6B v3"
     assert m1.description == ""
     assert m1.status == "unknown"
-    assert m1.size_mb == 0
     assert m1.languages == []
-    assert m1.is_loaded is False
-    assert m1.recommended is False
+    assert m1.preferred_quant is None
+    assert m1.variants == []
 
 
-async def test_list_models_reads_legacy_0_2_x_fields(mock_aiohttp, client):
-    """A 0.2.x addon (supported_languages/is_recommended) still parses."""
+async def test_list_models_refuses_an_app_without_variants(mock_aiohttp, client):
+    """An app older than Variants cannot say which quant is which: refuse it."""
     mock_aiohttp.get(
         f"{BASE_URL}/api/models",
         payload=[
-            {
-                "id": "whisper-small",
-                "name": "Whisper Small",
-                "status": "downloaded",
-                "supported_languages": ["en", "zh"],
-                "is_recommended": True,
-            }
+            {"id": "whisper-small", "name": "Whisper Small", "status": "downloaded"}
         ],
     )
 
-    models = await client.list_models()
-
-    assert models[0].languages == ["en", "zh"]
-    assert models[0].recommended is True
+    with pytest.raises(CortexSTTAppTooOldError):
+        await client.list_models()
 
 
 # ── engine_status ──
 
 
 async def test_engine_status(mock_aiohttp, client):
-    """GET /api/engine parses EngineStatus."""
+    """GET /api/engine parses loaded models and the keys of loaded Variants."""
     mock_aiohttp.get(
         f"{BASE_URL}/api/engine",
-        payload={"loaded_models": ["whisper-large-v3"], "loaded_count": 1},
+        payload={
+            "loaded_models": ["whisper-large-v3", "my-custom"],
+            "loaded_variants": [
+                {"model": "whisper-large-v3", "quant": "Q8_0"},
+                {"model": "my-custom", "quant": None},
+            ],
+            "loaded_count": 2,
+        },
     )
 
     status = await client.engine_status()
 
     assert isinstance(status, EngineStatus)
-    assert status.loaded_models == ["whisper-large-v3"]
-    assert status.loaded_count == 1
+    assert status.loaded_variants == {"whisper-large-v3:Q8_0", "my-custom"}
 
 
 # ── transcribe ──
@@ -253,6 +260,7 @@ async def test_transcribe_with_correct_params(mock_aiohttp, client):
         audio_data=b"\x00" * 10,
         model_id="parakeet",
         language="zh",
+        quant="Q4_K_M",
     )
 
     # aioresponses records calls -- inspect the last request
@@ -268,6 +276,7 @@ async def test_transcribe_with_correct_params(mock_aiohttp, client):
     query = url.query
 
     assert query["model"] == "parakeet"
+    assert query["quant"] == "Q4_K_M"
     assert query["language"] == "zh"
     assert query["sample_rate"] == "16000"
     assert query["channels"] == "1"
@@ -379,6 +388,7 @@ async def test_transcribe_stream_happy_path():
             _audio_stream([b"\x00" * 320, b"\x11" * 320]),
             model_id="whisper-small",
             language="en",
+            quant="Q8_0",
         )
 
         assert isinstance(result, TranscribeResult)
@@ -392,6 +402,7 @@ async def test_transcribe_stream_happy_path():
         assert auth_header["has_query_key"] is False
         # start control message carried the expected fields
         assert start_msg["model"] == "whisper-small"
+        assert start_msg["quant"] == "Q8_0"
         assert start_msg["language"] == "en"
         assert start_msg["format"] == "pcm_s16le"
         assert start_msg["sample_rate"] == 16000

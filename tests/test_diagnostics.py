@@ -10,7 +10,7 @@ from custom_components.cortex_stt.diagnostics import (
     TO_REDACT,
     async_get_config_entry_diagnostics,
 )
-from custom_components.cortex_stt.models import CortexSTTRuntimeData, ModelInfo
+from custom_components.cortex_stt.models import CortexSTTRuntimeData, Variant
 
 
 def _make_entry() -> MagicMock:
@@ -19,17 +19,17 @@ def _make_entry() -> MagicMock:
     entry.options = {"update_interval": 45}
     entry.runtime_data = CortexSTTRuntimeData(
         client=MagicMock(),
-        models=[
-            ModelInfo(
-                id="whisper-small",
-                name="Whisper Small",
+        variants=[
+            Variant(
+                model_id="whisper-small",
+                quant="Q8_0",
+                model_name="Whisper Small",
                 description="",
-                status="downloaded",
-                size_mb=500,
                 languages=["en", "zh"],
+                size_mb=500,
             )
         ],
-        sensors_by_model={"whisper-small": [MagicMock(), MagicMock()]},
+        sensors_by_variant={"whisper-small:Q8_0": [MagicMock(), MagicMock()]},
     )
     return entry
 
@@ -63,25 +63,24 @@ async def test_options_are_included():
 
 
 @pytest.mark.asyncio
-async def test_models_are_dumped_without_private_fields():
-    """Discovered models are listed by id and languages."""
+async def test_variants_are_listed_with_their_quant():
+    """Discovered Variants are listed by key, model, quant and languages."""
     entry = _make_entry()
     result = await async_get_config_entry_diagnostics(MagicMock(), entry)
 
-    assert len(result["models"]) == 1
-    model = result["models"][0]
-    assert model["id"] == "whisper-small"
-    assert "engine_type" not in model
-    assert model["languages"] == ["en", "zh"]
+    variant = result["variants"][0]
+    assert variant["key"] == "whisper-small:Q8_0"
+    assert variant["quant"] == "Q8_0"
+    assert variant["languages"] == ["en", "zh"]
 
 
 @pytest.mark.asyncio
 async def test_sensor_counts_report_registration():
-    """Report how many push channels are registered per model."""
+    """Report how many push channels are registered per Variant."""
     entry = _make_entry()
     result = await async_get_config_entry_diagnostics(MagicMock(), entry)
 
-    assert result["sensor_counts"] == {"whisper-small": 2}
+    assert result["sensor_counts"] == {"whisper-small:Q8_0": 2}
 
 
 def test_to_redact_covers_api_key():

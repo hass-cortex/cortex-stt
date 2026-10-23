@@ -29,7 +29,7 @@ async def async_setup_entry(
     config_entry: CortexSTTConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up model-loaded binary sensors -- one per downloaded model."""
+    """Set up loaded binary sensors -- one per installed Variant."""
     client = config_entry.runtime_data.client
 
     update_interval = config_entry.options.get(
@@ -42,14 +42,12 @@ async def async_setup_entry(
         hass,
         config_entry,
         async_add_entities,
-        lambda model: [
-            ModelLoadedSensor(config_entry, coordinator, model.id, model.name)
-        ],
+        lambda variant: [ModelLoadedSensor(config_entry, coordinator, variant.key)],
     )
 
 
 class ModelLoadedSensor(CoordinatorEntity[CortexSTTCoordinator], BinarySensorEntity):
-    """Binary sensor indicating whether a model is currently loaded in memory.
+    """Binary sensor indicating whether a Variant is currently loaded in memory.
 
     Polled via the coordinator every 30 seconds by querying GET /api/engine.
     """
@@ -63,27 +61,25 @@ class ModelLoadedSensor(CoordinatorEntity[CortexSTTCoordinator], BinarySensorEnt
         self,
         config_entry: CortexSTTConfigEntry,
         coordinator: CortexSTTCoordinator,
-        model_id: str,
-        model_name: str,
+        variant_key: str,
     ) -> None:
         """Initialize the binary sensor.
 
         Args:
             config_entry: Config entry for this integration instance.
             coordinator: Coordinator that polls engine status.
-            model_id: Model ID to check in loaded_models.
-            model_name: Human-readable model name.
+            variant_key: Key of the Variant to check in loaded_variants.
         """
         super().__init__(coordinator)
-        self._model_id = model_id
-        self._attr_unique_id = f"{DOMAIN}_{config_entry.entry_id}_{model_id}_loaded"
+        self._variant_key = variant_key
+        self._attr_unique_id = f"{DOMAIN}_{config_entry.entry_id}_{variant_key}_loaded"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{config_entry.entry_id}_{model_id}")},
+            identifiers={(DOMAIN, f"{config_entry.entry_id}_{variant_key}")},
         )
 
     @property
     def is_on(self) -> bool | None:
-        """Return True if the model is currently loaded."""
+        """Return True if the Variant is currently loaded."""
         if self.coordinator.data is None:
             return None
-        return self._model_id in self.coordinator.data.loaded_models
+        return self._variant_key in self.coordinator.data.loaded_variants

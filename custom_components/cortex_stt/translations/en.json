@@ -42,6 +42,15 @@
     },
     "engine_status_failed": {
       "message": "Error fetching engine status: {error}"
+    },
+    "app_too_old": {
+      "message": "The Cortex STT app is too old for this integration; update the app"
+    }
+  },
+  "issues": {
+    "app_too_old": {
+      "title": "Update the Cortex STT app",
+      "description": "This version of the Cortex STT integration needs the Cortex STT app to report each installed quant of a model. Update the app from Settings → Apps; the integration connects again on its own once the app is updated."
     }
   },
   "options": {

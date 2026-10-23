@@ -17,7 +17,7 @@ Audio ──► Cortex STT Server ──► Transcribed Text
               └── Qwen3-ASR, Canary, Moonshine, ...
 ```
 
-Each downloaded model on the server becomes its own STT entity in Home Assistant, so voice pipelines can pick the right model per language or per use case.
+Each installed model on the server -- and each quant of it, when several are installed -- becomes its own STT entity in Home Assistant, so voice pipelines can pick the right model and quant per language or per use case.
 
 > **Wrong characters for Chinese device names?** Pair with [STT Corrector](https://github.com/hass-cortex/stt-corrector) -- it normalizes language, applies custom replacements, and pinyin-matches transcripts against your HA areas and devices.
 
@@ -25,7 +25,7 @@ Each downloaded model on the server becomes its own STT entity in Home Assistant
 
 - **Multi-model STT** -- Whisper, Parakeet, SenseVoice, Qwen3-ASR, and more served by the Cortex STT Server
 - **WebSocket streaming** -- audio is fed to the server while you are still speaking, so decoding overlaps capture; falls back to a single POST automatically if the stream cannot be opened
-- **Per-model entities** -- one STT entity, one `model loaded` binary sensor, and eleven diagnostic sensors per downloaded model
+- **Per-quant entities** -- one device per installed quant of a model (e.g. "Whisper Small (Q8_0)"), with one STT entity, one `model loaded` binary sensor, and eleven diagnostic sensors
 - **Automatic model discovery** -- discovers everything on the server at setup, then adds/removes entities live as models are downloaded or deleted server-side (no reload needed)
 - **Supervisor auto-discovery** -- when the Cortex STT app is installed, the integration is offered automatically with the URL and API key pre-filled (no manual setup needed)
 - **Capture-device attribution** -- each transcription is tagged with the Assist satellite that recorded it, so the server's history can compare transcription quality per microphone (works through [STT Corrector](https://github.com/hass-cortex/stt-corrector) too)
@@ -33,7 +33,7 @@ Each downloaded model on the server becomes its own STT entity in Home Assistant
 
 ## Getting Started
 
-**Prerequisites:** Home Assistant **2026.3.0+** and a running [Cortex STT Server](https://github.com/hass-cortex/app-cortex-stt) instance (available as a Home Assistant app).
+**Prerequisites:** Home Assistant **2026.3.0+** and a running [Cortex STT Server](https://github.com/hass-cortex/app-cortex-stt) instance (available as a Home Assistant app), version **0.6.0 or later** -- an older app gets a repair asking to update it, and the integration connects once it is updated.
 
 ### 1. Install
 
@@ -60,13 +60,13 @@ For non-app servers (or if auto-discovery is disabled), add the integration manu
 
 [![Open your Home Assistant instance and start setting up this integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=cortex_stt)
 
-Click the button above, or manually: **Settings > Devices & Services > Add Integration** > search "Cortex STT". Enter the **Server URL** and **API Key**. The integration validates connectivity and credentials before completing setup, then creates one device per downloaded model.
+Click the button above, or manually: **Settings > Devices & Services > Add Integration** > search "Cortex STT". Enter the **Server URL** and **API Key**. The integration validates connectivity and credentials before completing setup, then creates one device per installed quant of each model.
 
 ### 4. Assign to Voice Pipeline
 
 [![Open your Home Assistant instance and manage your voice assistants.](https://my.home-assistant.io/badges/voice_assistants.svg)](https://my.home-assistant.io/redirect/voice_assistants/)
 
-Select or create a voice pipeline, then set **Speech-to-text** to the Cortex STT entity for the model you want to use. If you have several downloaded models, you can create one pipeline per model and switch between them per use case.
+Select or create a voice pipeline, then set **Speech-to-text** to the Cortex STT entity for the model and quant you want to use. With several installed, you can give each pipeline its own -- say a small quant for a fast satellite and a large one for the study -- and they all serve at once.
 
 ### Configuration Options
 
@@ -86,7 +86,7 @@ Changes take effect immediately -- the integration reloads itself when you save.
 
 ## Entities
 
-Per downloaded model, the integration creates:
+Per installed quant of each model (its own device), the integration creates:
 
 | Entity                     | Type              | Description                                          |
 | -------------------------- | ----------------- | ---------------------------------------------------- |
@@ -133,7 +133,7 @@ The Cortex STT Server requires non-silent audio. Check that your wake-word / VAD
 
 **How do I pick between Whisper, Parakeet, SenseVoice, and the rest?**
 
-Each model is exposed as its own STT entity -- just assign the one you want to a voice pipeline. Rough guidance: Parakeet for low-latency English, Whisper for multilingual accuracy, SenseVoice for Asian languages; the server's catalog marks recommended models per family. Use the `Real-time factor` sensor to compare live performance on your hardware, and the server's history (audio level + capture device) to tell microphone problems apart from model problems.
+Each model -- and each installed quant of it -- is exposed as its own STT entity; just assign the one you want to a voice pipeline. To compare quants of one model, install them side by side on the server and run them against the same recordings in its Evaluation page. Rough guidance: Parakeet for low-latency English, Whisper for multilingual accuracy, SenseVoice for Asian languages; the server's catalog marks recommended models per family. Use the `Real-time factor` sensor to compare live performance on your hardware, and the server's history (audio level + capture device) to tell microphone problems apart from model problems.
 
 **My pipeline uses `zh-TW` but the server only reports `zh`. Does that work?**
 

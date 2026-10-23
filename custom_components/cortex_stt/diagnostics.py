@@ -20,17 +20,16 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
     runtime_data = entry.runtime_data
-    models = [
+    variants = [
         {
-            "id": m.id,
-            "name": m.name,
-            "status": m.status,
-            "size_mb": m.size_mb,
-            "languages": m.languages,
-            "is_loaded": m.is_loaded,
-            "recommended": m.recommended,
+            "key": v.key,
+            "model_id": v.model_id,
+            "quant": v.quant,
+            "name": v.name,
+            "size_mb": v.size_mb,
+            "languages": v.languages,
         }
-        for m in runtime_data.models
+        for v in runtime_data.variants
     ]
 
     return {
@@ -38,9 +37,9 @@ async def async_get_config_entry_diagnostics(
             "data": async_redact_data(dict(entry.data), TO_REDACT),
             "options": dict(entry.options),
         },
-        "models": models,
+        "variants": variants,
         "sensor_counts": {
-            model_id: len(channels)
-            for model_id, channels in runtime_data.sensors_by_model.items()
+            key: len(channels)
+            for key, channels in runtime_data.sensors_by_variant.items()
         },
     }

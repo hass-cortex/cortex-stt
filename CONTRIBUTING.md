@@ -71,9 +71,10 @@ cortex-stt/
     client.py            # HTTP client for Cortex STT API
     config_flow.py       # Config flow (host URL + API key) + reauth flow
     coordinator.py       # DataUpdateCoordinator for engine status polling
-    stt.py               # Per-model STT entities (one per downloaded model)
-    sensor.py            # Per-model diagnostic sensors (11 per model)
-    binary_sensor.py     # Per-model "model loaded" binary sensor
+    stt.py               # Per-Variant STT entities (one per installed quant of a model)
+    sensor.py            # Per-Variant diagnostic sensors (11 each)
+    binary_sensor.py     # Per-Variant "model loaded" binary sensor
+    migration.py         # Moves pre-Variant devices/entities onto Variants, keeping entity ids
     models.py            # Runtime data, model info, transcription stats
     const.py             # Constants
     strings.json         # UI strings (source of truth)
@@ -84,20 +85,20 @@ cortex-stt/
 
 ## Architecture
 
-### Per-Model Entities
+### Per-Variant Entities
 
-Each downloaded model on the Cortex STT Server gets its own HA device containing:
+Each installed Variant (one model at one quant) on the Cortex STT Server gets its own HA device, keyed `{entry_id}_{model}:{quant}` (a Custom model: `{entry_id}_{model}`), containing:
 - 1 STT entity for voice pipeline integration
 - 11 diagnostic sensors tracking transcription statistics
 - 1 binary sensor indicating model load status
 
 ### Sensor Push Updates
 
-The STT entity pushes `TranscriptionStats` to sensors after each transcription attempt. Sensors filter by `model_id` and use `RestoreSensor` for state persistence across restarts.
+The STT entity pushes `TranscriptionStats` to sensors after each transcription attempt. Sensors filter by Variant key and use `RestoreSensor` for state persistence across restarts.
 
 ### Coordinator Polling
 
-The binary sensor platform uses a `DataUpdateCoordinator` to poll `GET /api/engine` every 30 seconds, tracking which models are currently loaded in memory.
+The binary sensor platform uses a `DataUpdateCoordinator` to poll `GET /api/engine` every 30 seconds, tracking which Variants are currently loaded in memory.
 
 ## Reporting Issues
 

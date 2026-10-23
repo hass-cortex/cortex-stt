@@ -142,20 +142,20 @@ async def async_setup_entry(
     config_entry: CortexSTTConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up Cortex STT sensors -- 11 per downloaded model."""
+    """Set up Cortex STT sensors -- 11 per installed Variant."""
     async_setup_dynamic_models(
         hass,
         config_entry,
         async_add_entities,
-        lambda model: [
-            CortexSTTSensor(config_entry, model.id, model.name, desc)
+        lambda variant: [
+            CortexSTTSensor(config_entry, variant.key, desc)
             for desc in SENSOR_DESCRIPTIONS
         ],
     )
 
 
 class CortexSTTSensor(RestoreSensor):
-    """Sensor that tracks per-model Cortex STT statistics.
+    """Sensor that tracks per-Variant Cortex STT statistics.
 
     Each sensor owns its value and persists it via RestoreSensor.
     The STT entity pushes TranscriptionStats after each API call,
@@ -169,32 +169,30 @@ class CortexSTTSensor(RestoreSensor):
     def __init__(
         self,
         config_entry: CortexSTTConfigEntry,
-        model_id: str,
-        model_name: str,
+        variant_key: str,
         description: CortexSTTSensorDescription,
     ) -> None:
         """Initialize the sensor.
 
         Args:
             config_entry: Config entry for this integration instance.
-            model_id: Model ID this sensor tracks.
-            model_name: Human-readable model name.
+            variant_key: Key of the Variant this sensor tracks.
             description: Sensor entity description with update_fn.
         """
         self.entity_description = description
         self._config_entry = config_entry
-        self._model_id = model_id
+        self._variant_key = variant_key
         self._attr_unique_id = (
-            f"{DOMAIN}_{config_entry.entry_id}_{model_id}_{description.key}"
+            f"{DOMAIN}_{config_entry.entry_id}_{variant_key}_{description.key}"
         )
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{config_entry.entry_id}_{model_id}")},
+            identifiers={(DOMAIN, f"{config_entry.entry_id}_{variant_key}")},
         )
 
     @property
-    def model_id(self) -> str:
-        """Return the model ID this sensor tracks."""
-        return self._model_id
+    def variant_key(self) -> str:
+        """Return the key of the Variant this sensor tracks."""
+        return self._variant_key
 
     async def async_added_to_hass(self) -> None:
         """Restore last state and register for push updates from STT entity."""
@@ -207,12 +205,12 @@ class CortexSTTSensor(RestoreSensor):
 
         # Register for push updates from STT entity
         runtime_data: CortexSTTRuntimeData = self._config_entry.runtime_data
-        runtime_data.sensors_by_model.setdefault(self._model_id, []).append(self)
+        runtime_data.sensors_by_variant.setdefault(self._variant_key, []).append(self)
 
     async def async_will_remove_from_hass(self) -> None:
         """Unregister this sensor from push updates."""
         runtime_data: CortexSTTRuntimeData = self._config_entry.runtime_data
-        channels = runtime_data.sensors_by_model.get(self._model_id)
+        channels = runtime_data.sensors_by_variant.get(self._variant_key)
         if channels is not None:
             with contextlib.suppress(ValueError):
                 channels.remove(self)

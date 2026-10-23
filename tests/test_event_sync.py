@@ -21,19 +21,31 @@ from custom_components.cortex_stt.const import (
     EVENT_MODELS_CHANGED,
     models_changed_signal,
 )
-from custom_components.cortex_stt.models import CortexSTTRuntimeData, ModelInfo
+from custom_components.cortex_stt.models import (
+    CortexSTTRuntimeData,
+    ModelInfo,
+    Variant,
+    VariantInfo,
+    installed_variants,
+)
 from custom_components.cortex_stt.stt import async_setup_entry as stt_setup_entry
 
 
-def _make_model(model_id: str, status: str = "downloaded") -> ModelInfo:
+def _make_model(model_id: str, quants: tuple[str, ...] = ("Q8_0",)) -> ModelInfo:
     return ModelInfo(
         id=model_id,
         name=model_id,
         description="test model",
-        status=status,
+        status="downloaded" if quants else "available",
         size_mb=100,
         languages=["en"],
+        preferred_quant=quants[0] if quants else None,
+        variants=[VariantInfo(quant=q, status="downloaded") for q in quants],
     )
+
+
+def _variants(*models: ModelInfo) -> list[Variant]:
+    return installed_variants(list(models))
 
 
 def _patched_setup(mock_client):
@@ -88,7 +100,7 @@ async def test_event_handler_adds_and_signals(mock_hass, mock_config_entry):
     mock_client.validate = AsyncMock(return_value=None)
     mock_client.list_models = AsyncMock(return_value=[_make_model("whisper-tiny")])
 
-    received: list[list[ModelInfo]] = []
+    received: list[list[Variant]] = []
     async_dispatcher_connect(
         mock_hass,
         models_changed_signal(mock_config_entry.entry_id),
@@ -97,39 +109,38 @@ async def test_event_handler_adds_and_signals(mock_hass, mock_config_entry):
 
     handler = await _setup_and_get_handler(mock_hass, mock_config_entry, mock_client)
 
-    # Addon now reports a second downloaded model (plus an undownloaded one).
+    # Addon now reports a second quant of whisper-tiny, another model, and
+    # one with nothing installed.
     mock_client.list_models = AsyncMock(
         return_value=[
-            _make_model("whisper-tiny"),
+            _make_model("whisper-tiny", ("Q8_0", "Q4_K_M")),
             _make_model("parakeet-tdt-0.6b-v3"),
-            _make_model("sensevoice", status="available"),
+            _make_model("sensevoice", ()),
         ]
     )
     await handler(MagicMock())
 
+    expected = {"whisper-tiny:Q8_0", "whisper-tiny:Q4_K_M", "parakeet-tdt-0.6b-v3:Q8_0"}
     assert received, "dispatcher signal was not sent"
-    assert {m.id for m in received[-1]} == {"whisper-tiny", "parakeet-tdt-0.6b-v3"}
-    assert {m.id for m in mock_config_entry.runtime_data.models} == {
-        "whisper-tiny",
-        "parakeet-tdt-0.6b-v3",
-    }
+    assert {v.key for v in received[-1]} == expected
+    assert {v.key for v in mock_config_entry.runtime_data.variants} == expected
 
 
 @pytest.mark.asyncio
 async def test_event_handler_removes_stale_device(mock_hass, mock_config_entry):
-    """When a model disappears, its device is removed on the next event."""
+    """When one quant is uninstalled, only its device goes on the next event."""
     mock_client = MagicMock()
     mock_client.validate = AsyncMock(return_value=None)
     mock_client.list_models = AsyncMock(
-        return_value=[_make_model("whisper-tiny"), _make_model("parakeet-tdt-0.6b-v3")]
+        return_value=[_make_model("whisper-tiny", ("Q8_0", "Q4_K_M"))]
     )
 
     stale = MagicMock()
-    stale.id = "device_parakeet"
-    stale.identifiers = {("cortex_stt", "test_entry_123_parakeet-tdt-0.6b-v3")}
+    stale.id = "device_tiny_q4"
+    stale.identifiers = {("cortex_stt", "test_entry_123_whisper-tiny:Q4_K_M")}
     kept = MagicMock()
-    kept.id = "device_tiny"
-    kept.identifiers = {("cortex_stt", "test_entry_123_whisper-tiny")}
+    kept.id = "device_tiny_q8"
+    kept.identifiers = {("cortex_stt", "test_entry_123_whisper-tiny:Q8_0")}
 
     mock_device_reg = MagicMock()
     dr.async_get = MagicMock(return_value=mock_device_reg)
@@ -140,11 +151,11 @@ async def test_event_handler_removes_stale_device(mock_hass, mock_config_entry):
         await async_setup_entry(mock_hass, mock_config_entry)
     handler = mock_hass.bus.async_listen.call_args.args[1]
 
-    # parakeet got deleted on the addon; only whisper-tiny remains.
+    # Q4_K_M was uninstalled on the addon; Q8_0 keeps serving.
     mock_client.list_models = AsyncMock(return_value=[_make_model("whisper-tiny")])
     await handler(MagicMock())
 
-    mock_device_reg.async_remove_device.assert_called_once_with("device_parakeet")
+    mock_device_reg.async_remove_device.assert_called_once_with("device_tiny_q4")
 
 
 @pytest.mark.asyncio
@@ -168,10 +179,12 @@ async def test_event_handler_ignores_refresh_error(mock_hass, mock_config_entry)
 
 @pytest.mark.asyncio
 async def test_stt_platform_adds_new_model_live(mock_hass, mock_config_entry):
-    """STT platform adds an entity only for newly-discovered models, and re-adds
-    a model that was removed then downloaded again (known-set pruning)."""
+    """STT platform adds an entity only for newly-installed Variants, and re-adds
+    one that was removed then installed again (known-set pruning)."""
+    one = _variants(_make_model("whisper-tiny"))
+    two = _variants(_make_model("whisper-tiny", ("Q8_0", "Q4_K_M")))
     mock_config_entry.runtime_data = CortexSTTRuntimeData(
-        client=MagicMock(), models=[_make_model("whisper-tiny")]
+        client=MagicMock(), variants=one
     )
 
     added: list = []
@@ -180,27 +193,21 @@ async def test_stt_platform_adds_new_model_live(mock_hass, mock_config_entry):
         added.extend(entities)
 
     await stt_setup_entry(mock_hass, mock_config_entry, _add)
-    assert {e._model.id for e in added} == {"whisper-tiny"}
+    assert [e._variant.key for e in added] == ["whisper-tiny:Q8_0"]
 
     signal = models_changed_signal(mock_config_entry.entry_id)
 
-    # A new model appears: only it is added (tiny is already known).
-    async_dispatcher_send(
-        mock_hass,
-        signal,
-        [_make_model("whisper-tiny"), _make_model("parakeet-tdt-0.6b-v3")],
-    )
-    assert {e._model.id for e in added} == {"whisper-tiny", "parakeet-tdt-0.6b-v3"}
+    # A second quant is installed: only it is added (Q8_0 is already known).
+    async_dispatcher_send(mock_hass, signal, two)
+    assert [e._variant.key for e in added] == [
+        "whisper-tiny:Q8_0",
+        "whisper-tiny:Q4_K_M",
+    ]
 
-    # parakeet is deleted: nothing added, but it leaves the known-set.
-    async_dispatcher_send(mock_hass, signal, [_make_model("whisper-tiny")])
+    # Q4_K_M is uninstalled: nothing added, but it leaves the known-set.
+    async_dispatcher_send(mock_hass, signal, one)
     assert len(added) == 2
 
-    # parakeet re-downloaded: it is added again.
-    async_dispatcher_send(
-        mock_hass,
-        signal,
-        [_make_model("whisper-tiny"), _make_model("parakeet-tdt-0.6b-v3")],
-    )
-    assert len(added) == 3
-    assert [e._model.id for e in added].count("parakeet-tdt-0.6b-v3") == 2
+    # Q4_K_M installed again: it is added again.
+    async_dispatcher_send(mock_hass, signal, two)
+    assert [e._variant.key for e in added].count("whisper-tiny:Q4_K_M") == 2

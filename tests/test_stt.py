@@ -10,48 +10,48 @@ import pytest
 from custom_components.cortex_stt.client import CortexSTTStreamConnectError
 from custom_components.cortex_stt.models import (
     CortexSTTRuntimeData,
-    ModelInfo,
     TranscribeResult,
     TranscriptionStats,
+    Variant,
 )
 from custom_components.cortex_stt.stt import CortexSTTEntity, _expand_languages
 
 # ── Helpers ──
 
 
-def _make_model(**overrides) -> ModelInfo:
-    """Create a ModelInfo with sensible defaults."""
+def _make_variant(**overrides) -> Variant:
+    """Create an installed Variant with sensible defaults."""
     defaults = {
-        "id": "whisper-small",
-        "name": "Whisper Small",
+        "model_id": "whisper-small",
+        "quant": "Q8_0",
+        "model_name": "Whisper Small",
         "description": "",
-        "status": "downloaded",
-        "size_mb": 500,
         "languages": ["en", "zh"],
+        "size_mb": 500,
     }
     defaults.update(overrides)
-    return ModelInfo(**defaults)
+    return Variant(**defaults)
 
 
 def _make_entity(
-    model: ModelInfo | None = None,
+    variant: Variant | None = None,
     entry_id: str = "test_entry",
 ) -> tuple[CortexSTTEntity, AsyncMock, MagicMock]:
     """Create a CortexSTTEntity with mocked dependencies.
 
     Returns (entity, mock_client, mock_config_entry).
     """
-    if model is None:
-        model = _make_model()
+    if variant is None:
+        variant = _make_variant()
 
     mock_client = AsyncMock()
-    runtime_data = CortexSTTRuntimeData(client=mock_client, models=[model])
+    runtime_data = CortexSTTRuntimeData(client=mock_client, variants=[variant])
 
     config_entry = MagicMock()
     config_entry.entry_id = entry_id
     config_entry.runtime_data = runtime_data
 
-    entity = CortexSTTEntity(config_entry, mock_client, model)
+    entity = CortexSTTEntity(config_entry, mock_client, variant)
     return entity, mock_client, config_entry
 
 
@@ -67,7 +67,7 @@ def _stream_returns(result: TranscribeResult):
     Draining mirrors the real client so stt.py's byte counter is populated.
     """
 
-    async def _run(audio_stream, model_id, language, capture_device=None):
+    async def _run(audio_stream, model_id, language, capture_device=None, quant=None):
         async for _ in audio_stream:
             pass
         return result
@@ -82,7 +82,7 @@ def _stream_raises(exc: Exception, *, consume: bool = True):
     raises before any chunk is read.
     """
 
-    async def _run(audio_stream, model_id, language, capture_device=None):
+    async def _run(audio_stream, model_id, language, capture_device=None, quant=None):
         if consume:
             async for _ in audio_stream:
                 pass
@@ -145,8 +145,7 @@ class TestCortexSTTEntityProperties:
 
     def test_supported_languages(self):
         """supported_languages uses _expand_languages on model languages."""
-        model = _make_model(languages=["en", "zh"])
-        entity, _, _ = _make_entity(model=model)
+        entity, _, _ = _make_entity(_make_variant(languages=["en", "zh"]))
 
         langs = entity.supported_languages
         # Should contain base codes plus all variants
@@ -165,23 +164,23 @@ class TestCortexSTTEntityProperties:
         entity, _, _ = _make_entity()
         assert entity.supported_codecs == ["pcm"]
 
-    def test_unique_id_format(self):
-        """unique_id follows cortex_stt_{entry_id}_{model_id} pattern."""
-        model = _make_model(id="whisper-small")
-        entity, _, _ = _make_entity(model=model, entry_id="abc123")
+    def test_unique_id_is_keyed_by_variant(self):
+        """The persisted unique id names the Variant, so quants never collide."""
+        entity, _, _ = _make_entity(entry_id="abc123")
+        assert entity._attr_unique_id == "cortex_stt_abc123_whisper-small:Q8_0"
+
+    def test_a_custom_models_unique_id_is_its_model_id(self):
+        """A Custom model has no quant, so its keys are what they always were."""
+        entity, _, _ = _make_entity(_make_variant(quant=None), entry_id="abc123")
         assert entity._attr_unique_id == "cortex_stt_abc123_whisper-small"
 
-    def test_device_info(self):
-        """device_info contains correct identifiers and metadata."""
-        model = _make_model(id="whisper-small", name="Whisper Small")
-        entity, _, _ = _make_entity(model=model, entry_id="abc123")
+    def test_device_names_the_quant(self):
+        """Each Variant is its own device, named with its quant."""
+        entity, _, _ = _make_entity(entry_id="abc123")
 
         info = entity._attr_device_info
-        assert ("cortex_stt", "abc123_whisper-small") in info["identifiers"]
-        assert info["name"] == "Whisper Small"
-        assert info["manufacturer"] == "cortex-stt"
-        assert info["model"] == "whisper-small"
-        assert info["entry_type"] == "service"
+        assert ("cortex_stt", "abc123_whisper-small:Q8_0") in info["identifiers"]
+        assert info["name"] == "Whisper Small (Q8_0)"
 
 
 # ── async_process_audio_stream tests ──
@@ -224,6 +223,8 @@ class TestAsyncProcessAudioStream:
         assert result.result == "success"
         assert result.text == "hello world"
         mock_client.transcribe_stream.assert_awaited_once()
+        # The entity names its own quant, never leaving it to the Preferred one.
+        assert mock_client.transcribe_stream.await_args.kwargs["quant"] == "Q8_0"
 
     @pytest.mark.asyncio
     async def test_transcription_api_error(self):
@@ -304,10 +305,11 @@ class TestAsyncProcessAudioStream:
 
         assert result.result == "success"
         assert result.text == "hello from post"
-        # The POST fallback received the full buffered audio.
+        # The POST fallback received the full buffered audio, for this quant.
         mock_client.transcribe.assert_awaited_once()
         posted_audio = mock_client.transcribe.await_args.args[0]
         assert len(posted_audio) == 32000
+        assert mock_client.transcribe.await_args.kwargs["quant"] == "Q8_0"
         assert pushed_stats[0].success is True
 
     @pytest.mark.asyncio
@@ -333,21 +335,16 @@ class TestAsyncProcessAudioStream:
         assert pushed_stats[0].api_error is True
 
     @pytest.mark.asyncio
-    async def test_push_stats_to_sensors(self):
-        """_push_stats calls handle_transcription on sensors matching model_id."""
-        model = _make_model(id="whisper-small")
-        entity, mock_client, config_entry = _make_entity(model=model)
+    async def test_push_stats_reach_only_this_variants_sensors(self):
+        """Stats go to this quant's sensors, not another quant of the model."""
+        entity, mock_client, config_entry = _make_entity()
 
-        # Create mock sensors: one matching, one not
         matching_sensor = MagicMock()
-        matching_sensor.model_id = "whisper-small"
-
         other_sensor = MagicMock()
-        other_sensor.model_id = "whisper-large"
 
-        config_entry.runtime_data.sensors_by_model = {
-            "whisper-small": [matching_sensor],
-            "whisper-large": [other_sensor],
+        config_entry.runtime_data.sensors_by_variant = {
+            "whisper-small:Q8_0": [matching_sensor],
+            "whisper-small:Q4_K_M": [other_sensor],
         }
 
         stats = TranscriptionStats(success=True, api_error=False)

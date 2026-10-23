@@ -10,7 +10,13 @@ from typing import Any
 
 import aiohttp
 
-from .models import EngineStatus, ModelInfo, TranscribeResult
+from .models import (
+    EngineStatus,
+    ModelInfo,
+    TranscribeResult,
+    VariantInfo,
+    variant_key,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,6 +38,10 @@ class CortexSTTStreamError(aiohttp.ClientError):
         super().__init__(message)
         self.code = code
         self.model_id = model_id
+
+
+class CortexSTTAppTooOldError(Exception):
+    """The app predates Variants: GET /api/models carries no ``variants``."""
 
 
 class CortexSTTStreamConnectError(aiohttp.ClientError):
@@ -108,10 +118,14 @@ class CortexSTTClient:
         return None
 
     async def list_models(self) -> list[ModelInfo]:
-        """List all models with their download/load status.
+        """List all models with their Variants and download/load status.
 
         Returns:
             List of ModelInfo objects from GET /api/models.
+
+        Raises:
+            CortexSTTAppTooOldError: The app reports no Variants; it must be
+                updated before this integration can tell its quants apart.
         """
         async with self._session.get(
             f"{self._host}/api/models",
@@ -120,6 +134,9 @@ class CortexSTTClient:
         ) as resp:
             resp.raise_for_status()
             data = await resp.json()
+
+        if any("variants" not in m for m in data):
+            raise CortexSTTAppTooOldError("the Cortex STT app reports no variants")
 
         return [
             ModelInfo(
@@ -132,7 +149,17 @@ class CortexSTTClient:
                 # mixed-version window does not blank out language matching.
                 languages=m.get("languages") or m.get("supported_languages") or [],
                 is_loaded=m.get("is_loaded", False),
-                recommended=m.get("recommended", m.get("is_recommended", False)),
+                recommended=m.get("recommended", False),
+                preferred_quant=m.get("preferred_quant"),
+                variants=[
+                    VariantInfo(
+                        quant=v.get("quant"),
+                        status=v.get("status", "unknown"),
+                        size_mb=v.get("size_mb", 0),
+                        is_loaded=v.get("is_loaded", False),
+                    )
+                    for v in m["variants"]
+                ],
             )
             for m in data
         ]
@@ -154,6 +181,10 @@ class CortexSTTClient:
         return EngineStatus(
             loaded_models=data.get("loaded_models", []),
             loaded_count=data.get("loaded_count", 0),
+            loaded_variants={
+                variant_key(v["model"], v.get("quant"))
+                for v in data.get("loaded_variants", [])
+            },
         )
 
     async def transcribe(
@@ -162,6 +193,7 @@ class CortexSTTClient:
         model_id: str,
         language: str,
         capture_device: str | None = None,
+        quant: str | None = None,
     ) -> TranscribeResult:
         """Transcribe audio using a specific model.
 
@@ -169,6 +201,7 @@ class CortexSTTClient:
             audio_data: Raw WAV audio bytes.
             model_id: Model ID to use for transcription.
             language: BCP-47 language code.
+            quant: The Variant to use; the model's Preferred variant when None.
             capture_device: Microphone/satellite that recorded the audio
                 (persisted on the server's history record).
 
@@ -183,6 +216,8 @@ class CortexSTTClient:
         }
         if capture_device:
             params["capture_device"] = capture_device
+        if quant:
+            params["quant"] = quant
         async with self._session.post(
             f"{self._host}/api/transcribe",
             headers={**self._headers, "Content-Type": "application/octet-stream"},
@@ -207,6 +242,7 @@ class CortexSTTClient:
         model_id: str,
         language: str,
         capture_device: str | None = None,
+        quant: str | None = None,
     ) -> TranscribeResult:
         """Transcribe a live audio stream over the WebSocket endpoint.
 
@@ -223,6 +259,8 @@ class CortexSTTClient:
             audio_stream: Async iterable of raw PCM16LE 16kHz mono chunks.
             model_id: Model ID to use for transcription.
             language: BCP-47 language code (sent only when non-empty).
+            capture_device: Microphone/satellite that recorded the audio.
+            quant: The Variant to use; the model's Preferred variant when None.
 
         Returns:
             TranscribeResult with text and timing information.
@@ -246,6 +284,8 @@ class CortexSTTClient:
             start["language"] = language
         if capture_device:
             start["capture_device"] = capture_device
+        if quant:
+            start["quant"] = quant
 
         # ── Connect (fallback-eligible; never surface the URL) ──
         try:

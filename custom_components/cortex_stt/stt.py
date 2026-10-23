@@ -1,4 +1,4 @@
-"""STT platform for Cortex STT -- one entity per downloaded model."""
+"""STT platform for Cortex STT -- one entity per installed Variant."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from .client import (
 )
 from .const import DOMAIN
 from .entity_setup import async_setup_dynamic_models
-from .models import CortexSTTRuntimeData, ModelInfo, TranscriptionStats
+from .models import CortexSTTRuntimeData, TranscriptionStats, Variant
 
 if TYPE_CHECKING:
     from . import CortexSTTConfigEntry
@@ -87,19 +87,23 @@ async def async_setup_entry(
     config_entry: CortexSTTConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up Cortex STT entities -- one per downloaded model."""
+    """Set up Cortex STT entities -- one per installed Variant."""
     client: CortexSTTClient = config_entry.runtime_data.client
 
     async_setup_dynamic_models(
         hass,
         config_entry,
         async_add_entities,
-        lambda model: [CortexSTTEntity(config_entry, client, model)],
+        lambda variant: [CortexSTTEntity(config_entry, client, variant)],
     )
 
 
 class CortexSTTEntity(SpeechToTextEntity):
-    """Per-model STT entity backed by Cortex STT."""
+    """Per-Variant STT entity backed by Cortex STT.
+
+    Each quant of a model is its own entity, so two pipelines can use two
+    quants of one model at once; every request names the quant.
+    """
 
     has_entity_name = True
 
@@ -107,24 +111,25 @@ class CortexSTTEntity(SpeechToTextEntity):
         self,
         config_entry: CortexSTTConfigEntry,
         client: CortexSTTClient,
-        model: ModelInfo,
+        variant: Variant,
     ) -> None:
         """Initialize the STT entity.
 
         Args:
             config_entry: Config entry with server credentials.
             client: HTTP client for Cortex STT.
-            model: Model info for this entity.
+            variant: The installed Variant this entity transcribes with.
         """
         self._config_entry = config_entry
         self._client = client
-        self._model = model
-        self._attr_unique_id = f"{DOMAIN}_{config_entry.entry_id}_{model.id}"
+        self._variant = variant
+        self._attr_unique_id = f"{DOMAIN}_{config_entry.entry_id}_{variant.key}"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{config_entry.entry_id}_{model.id}")},
-            name=model.name,
+            identifiers={(DOMAIN, f"{config_entry.entry_id}_{variant.key}")},
+            name=variant.name,
             manufacturer="cortex-stt",
-            model=model.id,
+            model=variant.model_id,
+            model_id=variant.quant,
             entry_type=DeviceEntryType.SERVICE,
         )
 
@@ -139,7 +144,7 @@ class CortexSTTEntity(SpeechToTextEntity):
         Expands base language codes (e.g. 'zh') to include common BCP-47
         locale variants (e.g. 'zh-TW', 'zh-CN') so HA pipeline matching works.
         """
-        return _expand_languages(self._model.languages)
+        return _expand_languages(self._variant.languages)
 
     @property
     def supported_formats(self) -> list[AudioFormats]:
@@ -167,21 +172,21 @@ class CortexSTTEntity(SpeechToTextEntity):
         return [AudioChannels.CHANNEL_MONO]
 
     def _push_stats(self, stats: TranscriptionStats) -> None:
-        """Push transcription statistics to sensors for this model."""
+        """Push transcription statistics to sensors for this Variant."""
         runtime_data: CortexSTTRuntimeData = self._config_entry.runtime_data
-        for channel in runtime_data.sensors_by_model.get(self._model.id, ()):
+        for channel in runtime_data.sensors_by_variant.get(self._variant.key, ()):
             channel.handle_transcription(stats)
 
     def _empty_result(self) -> SpeechResult:
         """Log and return the ERROR result for an empty audio stream."""
-        _LOGGER.warning("Received empty audio stream for model %s", self._model.id)
+        _LOGGER.warning("Received empty audio stream for model %s", self._variant.key)
         return SpeechResult(text=None, result=SpeechResultState.ERROR)
 
     def _api_error_result(
         self, err: Exception, byte_count: int, language: str, elapsed_ms: float
     ) -> SpeechResult:
         """Push api-error stats and return the ERROR result."""
-        _LOGGER.error("Transcription failed for model %s: %s", self._model.id, err)
+        _LOGGER.error("Transcription failed for model %s: %s", self._variant.key, err)
         self._push_stats(
             TranscriptionStats(
                 success=False,
@@ -251,12 +256,16 @@ class CortexSTTEntity(SpeechToTextEntity):
 
         try:
             result = await self._client.transcribe_stream(
-                tracked, self._model.id, metadata.language, capture_device
+                tracked,
+                self._variant.model_id,
+                metadata.language,
+                capture_device,
+                quant=self._variant.quant,
             )
         except CortexSTTStreamConnectError as err:
             _LOGGER.warning(
                 "WS stream unavailable for model %s, falling back to POST: %s",
-                self._model.id,
+                self._variant.key,
                 err,
             )
             # Handshake failed before any chunk was fed: drain the still-fresh
@@ -266,7 +275,11 @@ class CortexSTTEntity(SpeechToTextEntity):
                 chunks.append(chunk)
             try:
                 result = await self._client.transcribe(
-                    b"".join(chunks), self._model.id, metadata.language, capture_device
+                    b"".join(chunks),
+                    self._variant.model_id,
+                    metadata.language,
+                    capture_device,
+                    quant=self._variant.quant,
                 )
             except (aiohttp.ClientError, TimeoutError) as err2:
                 return self._api_error_result(
@@ -283,12 +296,12 @@ class CortexSTTEntity(SpeechToTextEntity):
         _LOGGER.debug(
             "Audio received: %d bytes, model=%s, language=%s",
             byte_count,
-            self._model.id,
+            self._variant.key,
             metadata.language,
         )
 
         if not result.text:
-            _LOGGER.debug("No speech recognized by model %s", self._model.id)
+            _LOGGER.debug("No speech recognized by model %s", self._variant.key)
             self._push_stats(
                 TranscriptionStats(
                     success=False,
@@ -301,7 +314,7 @@ class CortexSTTEntity(SpeechToTextEntity):
             )
             return SpeechResult(text=None, result=SpeechResultState.ERROR)
 
-        _LOGGER.info("Cortex STT [%s] result: %s", self._model.id, result.text)
+        _LOGGER.info("Cortex STT [%s] result: %s", self._variant.key, result.text)
 
         # Update session averages
         self._session_success_count += 1
