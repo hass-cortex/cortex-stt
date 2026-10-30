@@ -39,7 +39,7 @@ Each installed model on the server -- and each quant of it, when several are ins
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=hass-cortex&repository=cortex-stt&category=integration)
 
-Click the button above, or manually: **HACS** > search "Cortex STT" > **Download** > restart HA.
+Click the button above, or manually: **Settings > Marketplace** > search "Cortex STT" > **Install** > restart HA.
 
 <details>
 <summary>Manual installation</summary>
@@ -82,7 +82,7 @@ Changes take effect immediately -- the integration reloads itself when you save.
 
 ### Uninstallation
 
-**Settings > Devices & Services** > Cortex STT > three-dot menu > **Delete** > (HACS) remove the repository or (manual) delete `custom_components/cortex_stt/` > restart HA.
+**Settings > Devices & Services** > Cortex STT > three-dot menu > **Delete** > (Marketplace) uninstall the repository or (manual) delete `custom_components/cortex_stt/` > restart HA.
 
 ## Entities
 
@@ -152,7 +152,7 @@ Yes. Add the integration multiple times, once per server URL. Each instance is k
 
 **How do I install the latest development version?**
 
-After the integration is installed via HACS, switch to the latest `main` branch using the `update.install` action:
+After the integration is installed via the Marketplace, switch to the latest `main` branch using the `update.install` action:
 
 1. Go to **Developer Tools > Actions**
 2. Select the `update.install` action
