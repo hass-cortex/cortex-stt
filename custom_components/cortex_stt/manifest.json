@@ -1,6 +1,7 @@
 {
   "domain": "cortex_stt",
   "name": "Cortex STT",
+  "categories": ["ai_voice.speech"],
   "codeowners": ["@parkghost"],
   "config_flow": true,
   "dependencies": [],
