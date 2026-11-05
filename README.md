@@ -2,7 +2,7 @@
 
 [![GitHub Release](https://img.shields.io/github/v/release/hass-cortex/cortex-stt)](https://github.com/hass-cortex/cortex-stt/releases)
 [![HACS](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://hacs.xyz/)
-[![HA Version](https://img.shields.io/badge/HA-2026.3.0+-green.svg)](https://www.home-assistant.io/)
+[![HA Version](https://img.shields.io/badge/HA-2026.11.0+-green.svg)](https://www.home-assistant.io/)
 [![GitHub License](https://img.shields.io/github/license/hass-cortex/cortex-stt)](https://github.com/hass-cortex/cortex-stt/blob/main/LICENSE)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hass-cortex/cortex-stt)
 
@@ -33,7 +33,7 @@ Each installed model on the server -- and each quant of it, when several are ins
 
 ## Getting Started
 
-**Prerequisites:** Home Assistant **2026.3.0+** and a running [Cortex STT Server](https://github.com/hass-cortex/app-cortex-stt) instance (available as a Home Assistant app), version **0.6.0 or later** -- an older app gets a repair asking to update it, and the integration connects once it is updated.
+**Prerequisites:** Home Assistant **2026.11.0+** and a running [Cortex STT Server](https://github.com/hass-cortex/app-cortex-stt) instance (available as a Home Assistant app), version **0.6.0 or later** -- an older app gets a repair asking to update it, and the integration connects once it is updated.
 
 ### 1. Install
 

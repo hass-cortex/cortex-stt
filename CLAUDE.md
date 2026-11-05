@@ -51,5 +51,7 @@ custom_components/cortex_stt/
 
 - **Commits**: Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`)
 - **Translations**: `strings.json` is source of truth. `translations/en.json` must be byte-identical.
-- **Keep the `config.abort.reauth_successful` string** while `hacs.json` allows HA < 2026.10: those cores look it up in this domain and show the raw key when missing. From 2026.10 core supplies it itself.
+- **No shared abort reasons in `strings.json`**: core translates `reauth_successful` (raised by `async_update_reload_and_abort`) and the other common reasons itself. Keep only reasons this integration raises in its own domain, such as `already_configured`.
+- **Config entry methods return `None`**: signal failure by raising (`ConfigEntryNotReady`, `ConfigEntryAuthFailed`, `ConfigEntryError`); unload with `async_unload_platforms_or_raise`.
+- **Entity id renames apply in place**: an entity class that defines `async_added_to_hass` / `async_will_remove_from_hass` must also define `async_entity_id_changed` (super() first, then re-key anything keyed on `self.entity_id`), or core removes and re-adds it.
 - **Type annotations**: Required on all public functions. Use `TYPE_CHECKING` guard for HA imports.

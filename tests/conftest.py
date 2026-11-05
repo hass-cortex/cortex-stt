@@ -53,6 +53,7 @@ _ha_exceptions.ConfigEntryAuthFailed = type(
 _ha_exceptions.ConfigEntryNotReady = type(
     "ConfigEntryNotReady", (_HomeAssistantError,), {}
 )
+_ha_exceptions.ConfigEntryError = type("ConfigEntryError", (_HomeAssistantError,), {})
 
 # ── Core ──
 _ha_core.HomeAssistant = MagicMock
@@ -262,6 +263,9 @@ class _RestoreSensor:
     async def async_will_remove_from_hass(self) -> None:
         pass
 
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        pass
+
     async def async_get_last_sensor_data(self) -> Any:
         return None
 
@@ -428,6 +432,18 @@ def mock_hass():
     hass.config_entries = MagicMock()
     hass.config_entries.async_forward_entry_setups = AsyncMock()
     hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+
+    async def _unload_platforms_or_raise(entry, platforms):
+        # Mirrors core: a failed platform unload raises instead of returning False.
+        if not await hass.config_entries.async_unload_platforms(entry, platforms):
+            raise _ha_exceptions.ConfigEntryError(
+                translation_domain="homeassistant",
+                translation_key="unload_platforms_failed",
+            )
+
+    hass.config_entries.async_unload_platforms_or_raise = AsyncMock(
+        side_effect=_unload_platforms_or_raise
+    )
     return hass
 
 

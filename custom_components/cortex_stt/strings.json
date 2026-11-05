@@ -26,8 +26,7 @@
       "invalid_api_key": "Invalid API key"
     },
     "abort": {
-      "already_configured": "This server is already configured",
-      "reauth_successful": "API key updated successfully"
+      "already_configured": "This server is already configured"
     }
   },
   "exceptions": {

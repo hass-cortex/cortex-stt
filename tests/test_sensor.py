@@ -156,6 +156,25 @@ class TestSensorLifecycle:
         channels = config_entry.runtime_data.sensors_by_variant[sensor.variant_key]
         assert sensor not in channels
 
+    @pytest.mark.asyncio
+    async def test_entity_id_change_keeps_push_updates(self):
+        """A renamed sensor still receives stats pushed for its Variant."""
+        sensor, config_entry = _make_sensor(desc_key="total_requests")
+        sensor.async_get_last_sensor_data = AsyncMock(return_value=None)
+        sensor.async_write_ha_state = MagicMock()
+        await sensor.async_added_to_hass()
+
+        sensor.entity_id = "sensor.renamed_requests"
+        sensor.async_entity_id_changed("sensor.old_requests")
+
+        channels = config_entry.runtime_data.sensors_by_variant[sensor.variant_key]
+        assert channels.count(sensor) == 1
+        for channel in channels:
+            channel.handle_transcription(
+                TranscriptionStats(success=True, api_error=False)
+            )
+        assert sensor._attr_native_value == 1
+
 
 # ── handle_transcription tests ──
 

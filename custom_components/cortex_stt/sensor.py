@@ -14,7 +14,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import EntityCategory, UnitOfInformation, UnitOfTime
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -206,6 +206,15 @@ class CortexSTTSensor(RestoreSensor):
         # Register for push updates from STT entity
         runtime_data: CortexSTTRuntimeData = self._config_entry.runtime_data
         runtime_data.sensors_by_variant.setdefault(self._variant_key, []).append(self)
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        """Keep the sensor in place when its entity_id is renamed.
+
+        Push updates are keyed on the Variant key, not the entity_id, so there
+        is nothing to re-key.
+        """
+        super().async_entity_id_changed(old_entity_id)
 
     async def async_will_remove_from_hass(self) -> None:
         """Unregister this sensor from push updates."""

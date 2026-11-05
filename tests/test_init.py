@@ -7,7 +7,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import homeassistant.helpers.device_registry as dr
 import homeassistant.helpers.issue_registry as ir
 import pytest
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryError,
+    ConfigEntryNotReady,
+)
 
 from custom_components.cortex_stt import (
     async_setup,
@@ -74,9 +78,8 @@ async def test_setup_entry_success(mock_hass, mock_config_entry):
             return_value=mock_client,
         ),
     ):
-        result = await async_setup_entry(mock_hass, mock_config_entry)
+        await async_setup_entry(mock_hass, mock_config_entry)
 
-    assert result is True
     assert isinstance(mock_config_entry.runtime_data, CortexSTTRuntimeData)
     assert mock_config_entry.runtime_data.client is mock_client
     assert {v.key for v in mock_config_entry.runtime_data.variants} == {
@@ -190,9 +193,8 @@ async def test_setup_entry_stale_device_removal(mock_hass, mock_config_entry):
             return_value=mock_client,
         ),
     ):
-        result = await async_setup_entry(mock_hass, mock_config_entry)
+        await async_setup_entry(mock_hass, mock_config_entry)
 
-    assert result is True
     # Stale device removed, current device kept
     mock_device_reg.async_remove_device.assert_called_once_with("device_stale")
 
@@ -253,9 +255,16 @@ async def test_setup_clears_the_app_too_old_repair(mock_hass, mock_config_entry)
 
 @pytest.mark.asyncio
 async def test_unload_entry(mock_hass, mock_config_entry):
-    """Verify async_unload_platforms is called."""
-    result = await async_unload_entry(mock_hass, mock_config_entry)
-    assert result is True
+    """Unloading forwards to every platform and succeeds without raising."""
+    await async_unload_entry(mock_hass, mock_config_entry)
     mock_hass.config_entries.async_unload_platforms.assert_called_once_with(
         mock_config_entry, ["stt", "sensor", "binary_sensor"]
     )
+
+
+@pytest.mark.asyncio
+async def test_unload_entry_raises_when_a_platform_fails(mock_hass, mock_config_entry):
+    """A platform that fails to unload makes the unload fail, not pass silently."""
+    mock_hass.config_entries.async_unload_platforms.return_value = False
+    with pytest.raises(ConfigEntryError):
+        await async_unload_entry(mock_hass, mock_config_entry)
