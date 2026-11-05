@@ -73,11 +73,20 @@ jobs:
       - name: Generate release notes
         run: |
           TAG_VERSION="${{ steps.meta.outputs.version }}"
-          PREV_TAG=$(git tag --sort=-v:refname | grep -v "^${TAG_VERSION}$" | head -1)
+          PREV_TAG=$(git tag --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+' | grep -vx "${TAG_VERSION}" | head -1)
+          status=0
           if [ -n "$PREV_TAG" ]; then
-            uv run cz changelog --dry-run --template .github/release-notes.md.j2 --start-rev "$PREV_TAG" > body.md
+            uv run cz changelog --dry-run --template .github/release-notes.md.j2 --start-rev "$PREV_TAG" > body.md || status=$?
           else
-            uv run cz changelog --dry-run --template .github/release-notes.md.j2 > body.md
+            uv run cz changelog --dry-run --template .github/release-notes.md.j2 > body.md || status=$?
+          fi
+          # 3 = no commits since the previous tag; anything else is a real failure
+          if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then
+            exit "$status"
+          fi
+          # Only ci/docs/chore commits render nothing; a release body is never empty
+          if ! grep -q '[^[:space:]]' body.md; then
+            printf '## Other Changes\n\n- Build, CI and documentation changes only\n' > body.md
           fi
           echo "--- Release Notes ---"
           cat body.md
