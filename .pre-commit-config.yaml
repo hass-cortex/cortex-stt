@@ -22,7 +22,7 @@ repos:
     hooks:
       - id: hassfest
         name: hassfest
-        entry: docker run --rm -v ./custom_components:/github/workspace/custom_components ghcr.io/home-assistant/hassfest:latest
+        entry: docker run --rm --pull=always -v ./custom_components:/github/workspace/custom_components ghcr.io/home-assistant/hassfest:latest
         language: system
         pass_filenames: false
         files: ^custom_components/
