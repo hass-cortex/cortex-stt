@@ -85,5 +85,14 @@ version_files = [
 tag_format = "$version"
 annotated_tag = true
 update_changelog_on_bump = false
+# Release-note sections; refactor and perf share "Other Changes"
+change_type_order = ["Breaking Changes", "Features", "Fixes", "Other Changes"]
 pre_bump_hooks = ["uv lock", "git add uv.lock"]
 major_version_zero = true
+
+[tool.commitizen.change_type_map]
+"BREAKING CHANGE" = "Breaking Changes"
+feat = "Features"
+fix = "Fixes"
+refactor = "Other Changes"
+perf = "Other Changes"

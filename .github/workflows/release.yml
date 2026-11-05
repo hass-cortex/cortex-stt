@@ -75,9 +75,9 @@ jobs:
           TAG_VERSION="${{ steps.meta.outputs.version }}"
           PREV_TAG=$(git tag --sort=-v:refname | grep -v "^${TAG_VERSION}$" | head -1)
           if [ -n "$PREV_TAG" ]; then
-            uv run cz changelog --dry-run --start-rev "$PREV_TAG" > body.md
+            uv run cz changelog --dry-run --template .github/release-notes.md.j2 --start-rev "$PREV_TAG" > body.md
           else
-            uv run cz changelog --dry-run > body.md
+            uv run cz changelog --dry-run --template .github/release-notes.md.j2 > body.md
           fi
           echo "--- Release Notes ---"
           cat body.md
